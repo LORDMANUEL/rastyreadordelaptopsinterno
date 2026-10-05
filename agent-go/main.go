@@ -10,7 +10,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/user"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -28,6 +27,7 @@ type Config struct {
 }
 
 type Inventory struct {
+	Username        string
 	Serial          string
 	OSVersion       string
 	Manufacturer    string
@@ -160,7 +160,6 @@ func enroll(cfg *Config) error {
 
 func heartbeat(cfg Config) (int, error) {
 	host, _ := os.Hostname()
-	u, _ := user.Current()
 	inv := collectInventory()
 	payload := HeartbeatRequest{
 		Hostname: host, Serial: inv.Serial, OSVersion: inv.OSVersion, Architecture: runtime.GOARCH,
@@ -168,8 +167,8 @@ func heartbeat(cfg Config) (int, error) {
 		Manufacturer: inv.Manufacturer, Model: inv.Model, HardwareUUID: inv.HardwareUUID,
 		BatteryPercent: inv.BatteryPercent, BitLockerStatus: inv.BitLockerStatus,
 		TPMStatus: inv.TPMStatus, AntivirusStatus: inv.AntivirusStatus,
+		Username: inv.Username,
 	}
-	if u != nil { payload.Username = u.Username }
 	var out HeartbeatResponse
 	if err := postJSON(cfg.ServerURL+"/api/v1/heartbeat", cfg.DeviceToken, payload, &out); err != nil { return 0, err }
 	if out.NextHeartbeatSeconds > 0 { return out.NextHeartbeatSeconds, nil }
