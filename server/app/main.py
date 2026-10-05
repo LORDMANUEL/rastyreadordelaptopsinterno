@@ -22,7 +22,7 @@ from .auth import (
 )
 from .auth_schemas import LoginRequest
 from .database import SessionLocal
-from .models import AuditEvent, Device
+from .models import AuditEvent, Device, DeviceObservation
 from .schemas import DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
 
 APP_NAME = "YUDE Asset Guard"
@@ -48,7 +48,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=APP_NAME, version="0.3.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.4.0", lifespan=lifespan)
 
 
 def db_session():
@@ -192,6 +192,11 @@ def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_se
     device.last_seen = datetime.now(timezone.utc)
 
     db.add(AuditEvent(event_type=event_type, device_id=device.id, detail=f"{device.platform}:{device.hostname}"))
+    db.add(DeviceObservation(
+        device_id=device.id,
+        reason=event_type,
+        public_ip=device.public_ip,
+    ))
     db.commit()
     return EnrollResponse(device_id=device.id, device_token=raw_token, heartbeat_seconds=HEARTBEAT_SECONDS)
 
@@ -203,6 +208,14 @@ def heartbeat(
     device: Device = Depends(device_from_auth),
     db: Session = Depends(db_session),
 ):
+    previous = {
+        "username": device.username,
+        "lan_ip": device.lan_ip,
+        "wifi_ssid": device.wifi_ssid,
+        "public_ip": device.public_ip,
+    }
+    new_public_ip = client_ip(request)
+
     for field in (
         "username",
         "lan_ip",
@@ -224,8 +237,35 @@ def heartbeat(
         if value is not None and value != "":
             setattr(device, field, value)
 
-    device.public_ip = client_ip(request)
+    device.public_ip = new_public_ip
     device.last_seen = datetime.now(timezone.utc)
+
+    network_changed = any((
+        previous["lan_ip"] != device.lan_ip,
+        previous["wifi_ssid"] != device.wifi_ssid,
+        previous["public_ip"] != device.public_ip,
+    ))
+    user_changed = previous["username"] != device.username
+
+    observation_reason = None
+    if device.lost_mode:
+        observation_reason = "LOST_MODE_HEARTBEAT"
+    elif network_changed:
+        observation_reason = "NETWORK_CHANGE"
+    elif user_changed:
+        observation_reason = "USER_CHANGE"
+
+    if observation_reason:
+        db.add(DeviceObservation(
+            device_id=device.id,
+            reason=observation_reason,
+            username=device.username,
+            lan_ip=device.lan_ip,
+            public_ip=device.public_ip,
+            wifi_ssid=device.wifi_ssid,
+            battery_percent=device.battery_percent,
+        ))
+
     db.commit()
 
     return {
@@ -303,6 +343,35 @@ def get_device(device_id: str, _: str = Depends(require_admin), db: Session = De
         "created_at": device.created_at.isoformat(),
         "last_seen": device.last_seen.isoformat(),
     }
+
+
+@app.get("/api/v1/devices/{device_id}/history")
+def device_history(
+    device_id: str,
+    _: str = Depends(require_admin),
+    db: Session = Depends(db_session),
+):
+    device = db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    observations = db.scalars(
+        select(DeviceObservation)
+        .where(DeviceObservation.device_id == device_id)
+        .order_by(DeviceObservation.created_at.desc())
+        .limit(500)
+    ).all()
+
+    return [{
+        "id": item.id,
+        "reason": item.reason,
+        "username": item.username,
+        "lan_ip": item.lan_ip,
+        "public_ip": item.public_ip,
+        "wifi_ssid": item.wifi_ssid,
+        "battery_percent": item.battery_percent,
+        "created_at": item.created_at.isoformat(),
+    } for item in observations]
 
 
 @app.patch("/api/v1/devices/{device_id}")
