@@ -83,22 +83,42 @@ def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_se
         raise HTTPException(status_code=403, detail="invalid enrollment token")
 
     raw_token = secrets.token_urlsafe(48)
-    device = Device(
-        hostname=payload.hostname,
-        serial=payload.serial,
-        platform=payload.platform,
-        os_version=payload.os_version,
-        architecture=payload.architecture,
-        agent_version=payload.agent_version,
-        manufacturer=payload.manufacturer,
-        model=payload.model,
-        hardware_uuid=payload.hardware_uuid,
-        token_hash=sha256(raw_token),
-        public_ip=client_ip(request),
-    )
-    db.add(device)
-    db.flush()
-    db.add(AuditEvent(event_type="DEVICE_ENROLLED", device_id=device.id, detail=f"{device.platform}:{device.hostname}"))
+
+    device = None
+    if payload.hardware_uuid:
+        device = db.scalar(select(Device).where(Device.hardware_uuid == payload.hardware_uuid))
+    if device is None and payload.serial:
+        device = db.scalar(
+            select(Device).where(
+                Device.serial == payload.serial,
+                Device.platform == payload.platform,
+            )
+        )
+
+    event_type = "DEVICE_REENROLLED" if device is not None else "DEVICE_ENROLLED"
+    if device is None:
+        device = Device(
+            hostname=payload.hostname,
+            platform=payload.platform,
+            token_hash=sha256(raw_token),
+        )
+        db.add(device)
+        db.flush()
+
+    device.hostname = payload.hostname
+    device.serial = payload.serial
+    device.platform = payload.platform
+    device.os_version = payload.os_version
+    device.architecture = payload.architecture
+    device.agent_version = payload.agent_version
+    device.manufacturer = payload.manufacturer
+    device.model = payload.model
+    device.hardware_uuid = payload.hardware_uuid
+    device.token_hash = sha256(raw_token)
+    device.public_ip = client_ip(request)
+    device.last_seen = datetime.now(timezone.utc)
+
+    db.add(AuditEvent(event_type=event_type, device_id=device.id, detail=f"{device.platform}:{device.hostname}"))
     db.commit()
     return EnrollResponse(device_id=device.id, device_token=raw_token, heartbeat_seconds=HEARTBEAT_SECONDS)
 
