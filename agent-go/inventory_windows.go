@@ -10,6 +10,7 @@ import (
 )
 
 type inventoryJSON struct {
+	Username string `json:"username"`
 	Serial string `json:"serial"`
 	OSVersion string `json:"os_version"`
 	Manufacturer string `json:"manufacturer"`
@@ -35,6 +36,7 @@ $tpm=Get-Tpm
 $av=(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct | Select-Object -ExpandProperty displayName) -join ', '
 $ssid=((netsh wlan show interfaces) | Select-String '^\s*SSID\s*:' | Select-Object -First 1).ToString().Split(':',2)[1].Trim()
 [pscustomobject]@{
+ username=$cs.UserName
  serial=$bios.SerialNumber
  os_version=($os.Caption+' '+$os.Version)
  manufacturer=$cs.Manufacturer
@@ -53,6 +55,7 @@ $ssid=((netsh wlan show interfaces) | Select-String '^\s*SSID\s*:' | Select-Obje
 	var parsed inventoryJSON
 	if json.Unmarshal(out, &parsed) != nil { return Inventory{} }
 	return Inventory{
+		Username: strings.TrimSpace(parsed.Username),
 		Serial: strings.TrimSpace(parsed.Serial),
 		OSVersion: strings.TrimSpace(parsed.OSVersion),
 		Manufacturer: strings.TrimSpace(parsed.Manufacturer),
