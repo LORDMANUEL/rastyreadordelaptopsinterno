@@ -9,7 +9,7 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .database import Base, SessionLocal, engine
+from .database import SessionLocal
 from .models import AuditEvent, Device
 from .schemas import DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
 
@@ -27,7 +27,6 @@ app = FastAPI(title=APP_NAME, version="0.2.0")
 def startup() -> None:
     if not ENROLLMENT_TOKEN or not ADMIN_TOKEN:
         raise RuntimeError("ENROLLMENT_TOKEN and ADMIN_TOKEN are required")
-    Base.metadata.create_all(bind=engine)
 
 
 def db_session():
