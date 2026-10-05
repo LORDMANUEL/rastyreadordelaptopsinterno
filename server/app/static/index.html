@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>YUDE Asset Guard</title>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#eaf0ff;background:#0b1020}
+    body{margin:0;background:linear-gradient(135deg,#0b1020,#111a33);min-height:100vh}
+    header{padding:24px 32px;border-bottom:1px solid #26314f;display:flex;justify-content:space-between;gap:16px;align-items:center}
+    h1{margin:0;font-size:22px}.muted{color:#96a3c7}
+    main{padding:24px 32px}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}
+    .card,.panel{background:#121a2d;border:1px solid #26314f;border-radius:14px;padding:18px}
+    .value{font-size:32px;font-weight:700;margin-top:8px}
+    table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #26314f;font-size:14px}
+    button,input{background:#0d1530;color:#fff;border:1px solid #33446f;border-radius:9px;padding:10px}
+    button{cursor:pointer}.lost{color:#ff7474}.online{color:#75e6a4}.offline{color:#f4c76a}
+    @media(max-width:900px){.cards{grid-template-columns:1fr 1fr}main,header{padding:18px}.panel{overflow:auto}}
+  </style>
+</head>
+<body>
+<header>
+  <div><h1>YUDE Asset Guard</h1><div class="muted">Inventario y monitoreo de activos corporativos</div></div>
+  <div><input id="token" type="password" placeholder="Admin token"><button onclick="loadDevices()">Conectar</button></div>
+</header>
+<main>
+  <section class="cards">
+    <div class="card"><div class="muted">Equipos</div><div id="total" class="value">0</div></div>
+    <div class="card"><div class="muted">Online</div><div id="online" class="value">0</div></div>
+    <div class="card"><div class="muted">Offline</div><div id="offline" class="value">0</div></div>
+    <div class="card"><div class="muted">Modo pérdida</div><div id="lost" class="value">0</div></div>
+  </section>
+  <section class="panel">
+    <table>
+      <thead><tr><th>Activo</th><th>Host</th><th>Usuario</th><th>Sucursal</th><th>IP</th><th>Último contacto</th><th>Estado</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </section>
+</main>
+<script>
+function esc(v){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+async function loadDevices(){
+  const token=document.getElementById('token').value;
+  sessionStorage.setItem('assetguard_admin',token);
+  const r=await fetch('/api/v1/devices',{headers:{'X-Admin-Token':token}});
+  if(!r.ok){alert('No autorizado');return}
+  const data=await r.json();
+  total.textContent=data.length;
+  online.textContent=data.filter(x=>x.online).length;
+  offline.textContent=data.filter(x=>!x.online).length;
+  lost.textContent=data.filter(x=>x.lost_mode).length;
+  rows.innerHTML=data.map(x=>`<tr>
+    <td>${esc(x.asset_tag||x.serial||'-')}</td><td>${esc(x.hostname)}</td>
+    <td>${esc(x.username||'-')}</td><td>${esc(x.branch||'-')}</td>
+    <td>${esc(x.public_ip||x.lan_ip||'-')}</td><td>${new Date(x.last_seen).toLocaleString()}</td>
+    <td class="${x.lost_mode?'lost':(x.online?'online':'offline')}">${x.lost_mode?'PÉRDIDA':(x.online?'ONLINE':'OFFLINE')}</td>
+  </tr>`).join('');
+}
+window.addEventListener('load',()=>{const t=sessionStorage.getItem('assetguard_admin');if(t){token.value=t;loadDevices()}})
+</script>
+</body>
+</html>
