@@ -20,7 +20,7 @@ HEARTBEAT_SECONDS = int(os.getenv("HEARTBEAT_SECONDS", "300"))
 OFFLINE_SECONDS = int(os.getenv("HEARTBEAT_OFFLINE_SECONDS", "600"))
 STATIC_DIR = Path(__file__).parent / "static"
 
-app = FastAPI(title=APP_NAME, version="0.1.0")
+app = FastAPI(title=APP_NAME, version="0.2.0")
 
 
 @app.on_event("startup")
@@ -70,7 +70,7 @@ def client_ip(request: Request) -> str | None:
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": APP_NAME}
+    return {"status": "ok", "service": APP_NAME, "version": app.version}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -91,12 +91,15 @@ def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_se
         os_version=payload.os_version,
         architecture=payload.architecture,
         agent_version=payload.agent_version,
+        manufacturer=payload.manufacturer,
+        model=payload.model,
+        hardware_uuid=payload.hardware_uuid,
         token_hash=sha256(raw_token),
         public_ip=client_ip(request),
     )
     db.add(device)
     db.flush()
-    db.add(AuditEvent(event_type="DEVICE_ENROLLED", device_id=device.id, detail=device.hostname))
+    db.add(AuditEvent(event_type="DEVICE_ENROLLED", device_id=device.id, detail=f"{device.platform}:{device.hostname}"))
     db.commit()
     return EnrollResponse(device_id=device.id, device_token=raw_token, heartbeat_seconds=HEARTBEAT_SECONDS)
 
@@ -108,9 +111,25 @@ def heartbeat(
     device: Device = Depends(device_from_auth),
     db: Session = Depends(db_session),
 ):
-    for field in ("username", "lan_ip", "hostname", "serial", "os_version", "architecture", "agent_version"):
+    for field in (
+        "username",
+        "lan_ip",
+        "hostname",
+        "serial",
+        "os_version",
+        "architecture",
+        "agent_version",
+        "wifi_ssid",
+        "manufacturer",
+        "model",
+        "hardware_uuid",
+        "battery_percent",
+        "bitlocker_status",
+        "tpm_status",
+        "antivirus_status",
+    ):
         value = getattr(payload, field)
-        if value:
+        if value is not None and value != "":
             setattr(device, field, value)
 
     device.public_ip = client_ip(request)
@@ -142,14 +161,56 @@ def list_devices(_: str = Depends(require_admin), db: Session = Depends(db_sessi
             "username": d.username,
             "lan_ip": d.lan_ip,
             "public_ip": d.public_ip,
+            "wifi_ssid": d.wifi_ssid,
             "platform": d.platform,
             "os_version": d.os_version,
+            "architecture": d.architecture,
             "agent_version": d.agent_version,
+            "manufacturer": d.manufacturer,
+            "model": d.model,
+            "hardware_uuid": d.hardware_uuid,
+            "battery_percent": d.battery_percent,
+            "bitlocker_status": d.bitlocker_status,
+            "tpm_status": d.tpm_status,
+            "antivirus_status": d.antivirus_status,
             "lost_mode": d.lost_mode,
             "last_seen": d.last_seen.isoformat(),
             "online": age <= OFFLINE_SECONDS,
         })
     return output
+
+
+@app.get("/api/v1/devices/{device_id}")
+def get_device(device_id: str, _: str = Depends(require_admin), db: Session = Depends(db_session)):
+    device = db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="device not found")
+    return {
+        "id": device.id,
+        "hostname": device.hostname,
+        "serial": device.serial,
+        "asset_tag": device.asset_tag,
+        "branch": device.branch,
+        "assigned_to": device.assigned_to,
+        "username": device.username,
+        "lan_ip": device.lan_ip,
+        "public_ip": device.public_ip,
+        "wifi_ssid": device.wifi_ssid,
+        "platform": device.platform,
+        "os_version": device.os_version,
+        "architecture": device.architecture,
+        "agent_version": device.agent_version,
+        "manufacturer": device.manufacturer,
+        "model": device.model,
+        "hardware_uuid": device.hardware_uuid,
+        "battery_percent": device.battery_percent,
+        "bitlocker_status": device.bitlocker_status,
+        "tpm_status": device.tpm_status,
+        "antivirus_status": device.antivirus_status,
+        "lost_mode": device.lost_mode,
+        "created_at": device.created_at.isoformat(),
+        "last_seen": device.last_seen.isoformat(),
+    }
 
 
 @app.patch("/api/v1/devices/{device_id}")
