@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.2.0"
+const agentVersion = "0.3.0"
 
 type Config struct {
 	ServerURL        string `json:"server_url"`
@@ -193,14 +193,30 @@ func postJSON(url, bearer string, payload any, out any) error {
 }
 
 func firstLANIP() string {
-	ifaces, _ := net.Interfaces()
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
 	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 { continue }
-		addrs, _ := iface.Addrs()
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
 		for _, addr := range addrs {
 			var ip net.IP
-			switch v := addr.(type) { case *net.IPNet: ip=v.IP; case *net.IPAddr: ip=v.IP }
-			if ip != nil && ip.To4() != nil { return ip.String() }
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if ip == nil || ip.To4() == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+				continue
+			}
+			return ip.String()
 		}
 	}
 	return ""
