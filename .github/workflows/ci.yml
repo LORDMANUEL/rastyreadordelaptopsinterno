@@ -66,12 +66,27 @@ jobs:
           cache-dependency-path: agent-go/go.mod
       - name: Resolve Go modules for all platforms
         working-directory: agent-go
-        run: go mod tidy
-      - name: Format sources
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Check Go formatting
         working-directory: agent-go
-        run: gofmt -w .
+        run: |
+          files="$(gofmt -l .)"
+          if [ -n "$files" ]; then
+            echo "Unformatted Go files:"
+            echo "$files"
+            exit 1
+          fi
       - name: Vet Linux build
         working-directory: agent-go
+        run: go vet ./...
+      - name: Vet Windows build
+        working-directory: agent-go
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: "0"
         run: go vet ./...
       - name: Build Windows agent
         working-directory: agent-go
