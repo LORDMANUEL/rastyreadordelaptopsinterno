@@ -6,21 +6,28 @@
   <title>YUDE Asset Guard</title>
   <style>
     :root{font-family:Inter,system-ui,sans-serif;color:#eaf0ff;background:#0b1020}
+    *{box-sizing:border-box}
     body{margin:0;background:linear-gradient(135deg,#0b1020,#111a33);min-height:100vh}
     header{padding:24px 32px;border-bottom:1px solid #26314f;display:flex;justify-content:space-between;gap:16px;align-items:center}
-    h1{margin:0;font-size:22px}.muted{color:#96a3c7}
+    h1,h2{margin:0}.muted{color:#96a3c7}.small{font-size:12px}
     main{padding:24px 32px}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}
     .card,.panel{background:#121a2d;border:1px solid #26314f;border-radius:14px;padding:18px}
     .value{font-size:32px;font-weight:700;margin-top:8px}
     table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #26314f;font-size:14px}
+    tbody tr{cursor:pointer}tbody tr:hover{background:#17223d}
     button,input{background:#0d1530;color:#fff;border:1px solid #33446f;border-radius:9px;padding:10px}
-    button{cursor:pointer}.lost{color:#ff7474}.online{color:#75e6a4}.offline{color:#f4c76a}
-    @media(max-width:900px){.cards{grid-template-columns:1fr 1fr}main,header{padding:18px}.panel{overflow:auto}}
+    button{cursor:pointer}.danger{border-color:#7a303c}.lost{color:#ff7474}.online{color:#75e6a4}.offline{color:#f4c76a}
+    .detail{display:none;margin-top:18px}.detail.open{display:block}
+    .detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px}
+    .field{background:#0d1530;border-radius:10px;padding:12px}.field b{display:block;margin-top:4px;word-break:break-word}
+    .actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+    @media(max-width:1000px){.cards,.detail-grid{grid-template-columns:1fr 1fr}main,header{padding:18px}.panel{overflow:auto}}
+    @media(max-width:620px){.cards,.detail-grid{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
   </style>
 </head>
 <body>
 <header>
-  <div><h1>YUDE Asset Guard</h1><div class="muted">Inventario y monitoreo de activos corporativos</div></div>
+  <div><h1>YUDE Asset Guard</h1><div class="muted">Inventario, compliance y monitoreo de activos corporativos</div></div>
   <div><input id="token" type="password" placeholder="Admin token"><button onclick="loadDevices()">Conectar</button></div>
 </header>
 <main>
@@ -30,33 +37,100 @@
     <div class="card"><div class="muted">Offline</div><div id="offline" class="value">0</div></div>
     <div class="card"><div class="muted">Modo pérdida</div><div id="lost" class="value">0</div></div>
   </section>
+
   <section class="panel">
     <table>
-      <thead><tr><th>Activo</th><th>Host</th><th>Usuario</th><th>Sucursal</th><th>IP</th><th>Último contacto</th><th>Estado</th></tr></thead>
+      <thead><tr><th>Activo</th><th>Equipo</th><th>Usuario</th><th>Sucursal</th><th>Plataforma</th><th>IP pública</th><th>Último contacto</th><th>Estado</th></tr></thead>
       <tbody id="rows"></tbody>
     </table>
   </section>
+
+  <section id="detail" class="panel detail">
+    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
+      <div><h2 id="detailTitle">Equipo</h2><div id="detailSubtitle" class="muted"></div></div>
+      <button onclick="closeDetail()">Cerrar</button>
+    </div>
+    <div id="detailGrid" class="detail-grid"></div>
+    <div class="actions">
+      <button id="lostButton" class="danger" onclick="toggleLostMode()">Activar modo pérdida</button>
+      <button onclick="loadDevices()">Actualizar</button>
+    </div>
+    <div class="muted small" style="margin-top:12px">El modo pérdida aumenta la frecuencia de heartbeat. No activa cámara, micrófono, keylogger ni lectura de comunicaciones.</div>
+  </section>
 </main>
+
 <script>
-function esc(v){return String(v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+let devices=[];
+let selected=null;
+function esc(v){return String(v??'-').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function adminToken(){return document.getElementById('token').value}
+function field(label,value){return '<div class="field"><span class="muted small">'+esc(label)+'</span><b>'+esc(value??'-')+'</b></div>'}
+
 async function loadDevices(){
-  const token=document.getElementById('token').value;
+  const token=adminToken();
   sessionStorage.setItem('assetguard_admin',token);
   const r=await fetch('/api/v1/devices',{headers:{'X-Admin-Token':token}});
   if(!r.ok){alert('No autorizado');return}
-  const data=await r.json();
-  total.textContent=data.length;
-  online.textContent=data.filter(x=>x.online).length;
-  offline.textContent=data.filter(x=>!x.online).length;
-  lost.textContent=data.filter(x=>x.lost_mode).length;
-  rows.innerHTML=data.map(x=>`<tr>
-    <td>${esc(x.asset_tag||x.serial||'-')}</td><td>${esc(x.hostname)}</td>
-    <td>${esc(x.username||'-')}</td><td>${esc(x.branch||'-')}</td>
-    <td>${esc(x.public_ip||x.lan_ip||'-')}</td><td>${new Date(x.last_seen).toLocaleString()}</td>
-    <td class="${x.lost_mode?'lost':(x.online?'online':'offline')}">${x.lost_mode?'PÉRDIDA':(x.online?'ONLINE':'OFFLINE')}</td>
-  </tr>`).join('');
+  devices=await r.json();
+  total.textContent=devices.length;
+  online.textContent=devices.filter(x=>x.online).length;
+  offline.textContent=devices.filter(x=>!x.online).length;
+  lost.textContent=devices.filter(x=>x.lost_mode).length;
+  rows.innerHTML=devices.map(x=>'<tr onclick="openDetail(\''+x.id+'\')">'+
+    '<td>'+esc(x.asset_tag||x.serial||'-')+'</td>'+
+    '<td>'+esc((x.manufacturer||'')+' '+(x.model||x.hostname))+'</td>'+
+    '<td>'+esc(x.username||'-')+'</td><td>'+esc(x.branch||'-')+'</td>'+
+    '<td>'+esc(x.platform||'-')+'</td><td>'+esc(x.public_ip||'-')+'</td>'+
+    '<td>'+new Date(x.last_seen).toLocaleString()+'</td>'+
+    '<td class="'+(x.lost_mode?'lost':(x.online?'online':'offline'))+'">'+(x.lost_mode?'PÉRDIDA':(x.online?'ONLINE':'OFFLINE'))+'</td>'+
+  '</tr>').join('');
+  if(selected){
+    const fresh=devices.find(x=>x.id===selected.id);
+    if(fresh) renderDetail(fresh);
+  }
 }
-window.addEventListener('load',()=>{const t=sessionStorage.getItem('assetguard_admin');if(t){token.value=t;loadDevices()}})
+
+function openDetail(id){
+  const item=devices.find(x=>x.id===id);
+  if(!item)return;
+  selected=item;
+  renderDetail(item);
+  detail.classList.add('open');
+  detail.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function renderDetail(x){
+  selected=x;
+  detailTitle.textContent=x.asset_tag||x.hostname;
+  detailSubtitle.textContent=(x.manufacturer||'')+' '+(x.model||'')+' · '+(x.serial||'sin serial');
+  detailGrid.innerHTML=
+    field('Responsable',x.assigned_to)+field('Sucursal',x.branch)+field('Usuario',x.username)+field('Hostname',x.hostname)+
+    field('Serial',x.serial)+field('UUID',x.hardware_uuid)+field('Sistema operativo',x.os_version)+field('Arquitectura',x.architecture)+
+    field('IP LAN',x.lan_ip)+field('IP pública',x.public_ip)+field('Wi-Fi / SSID',x.wifi_ssid)+field('Batería',x.battery_percent==null?'-':x.battery_percent+'%')+
+    field('BitLocker',x.bitlocker_status)+field('TPM',x.tpm_status)+field('Antivirus',x.antivirus_status)+field('Agente',x.agent_version);
+  lostButton.textContent=x.lost_mode?'Desactivar modo pérdida':'Activar modo pérdida';
+}
+
+function closeDetail(){detail.classList.remove('open');selected=null}
+
+async function toggleLostMode(){
+  if(!selected)return;
+  const enable=!selected.lost_mode;
+  const reason=prompt(enable?'Motivo para activar modo pérdida:':'Motivo para desactivar modo pérdida:');
+  if(!reason||reason.trim().length<3)return;
+  const r=await fetch('/api/v1/devices/'+selected.id+'/lost-mode',{
+    method:'POST',
+    headers:{'Content-Type':'application/json','X-Admin-Token':adminToken()},
+    body:JSON.stringify({enabled:enable,reason:reason.trim()})
+  });
+  if(!r.ok){alert('No se pudo cambiar el modo pérdida');return}
+  await loadDevices();
+}
+
+window.addEventListener('load',()=>{
+  const t=sessionStorage.getItem('assetguard_admin');
+  if(t){token.value=t;loadDevices()}
+});
 </script>
 </body>
 </html>
