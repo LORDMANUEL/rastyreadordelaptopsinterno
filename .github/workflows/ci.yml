@@ -21,19 +21,30 @@ jobs:
         run: pip install -r server/requirements.txt
       - name: Compile Python sources
         run: python -m compileall -q server/app
+      - name: Run database migrations
+        working-directory: server
+        env:
+          ENROLLMENT_TOKEN: ci-enrollment-token
+          ADMIN_TOKEN: ci-admin-token
+          DATABASE_URL: sqlite:////tmp/yude_asset_guard_ci.db
+        run: python -m app.migrate
       - name: Import application
+        working-directory: server
         env:
           ENROLLMENT_TOKEN: ci-enrollment-token
           ADMIN_TOKEN: ci-admin-token
           DATABASE_URL: sqlite:////tmp/yude_asset_guard_ci.db
         run: |
           python - <<'PY'
-          import sys
-          sys.path.insert(0, "server")
+          from sqlalchemy import inspect
+          from app.database import engine
           from app.main import app, startup
           startup()
+          cols = {c["name"] for c in inspect(engine).get_columns("devices")}
+          required = {"wifi_ssid", "hardware_uuid", "bitlocker_status", "tpm_status", "antivirus_status"}
+          assert required.issubset(cols), cols
           assert app.title == "YUDE Asset Guard"
-          print("FastAPI startup OK")
+          print("FastAPI + migrations OK")
           PY
 
   windows-agent:
