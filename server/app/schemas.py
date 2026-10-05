@@ -9,6 +9,9 @@ class EnrollRequest(BaseModel):
     os_version: str | None = None
     architecture: str | None = None
     agent_version: str | None = None
+    manufacturer: str | None = None
+    model: str | None = None
+    hardware_uuid: str | None = None
 
 
 class EnrollResponse(BaseModel):
@@ -25,6 +28,14 @@ class HeartbeatRequest(BaseModel):
     os_version: str | None = None
     architecture: str | None = None
     agent_version: str | None = None
+    wifi_ssid: str | None = None
+    manufacturer: str | None = None
+    model: str | None = None
+    hardware_uuid: str | None = None
+    battery_percent: int | None = Field(default=None, ge=0, le=100)
+    bitlocker_status: str | None = None
+    tpm_status: str | None = None
+    antivirus_status: str | None = None
 
 
 class DeviceUpdate(BaseModel):
