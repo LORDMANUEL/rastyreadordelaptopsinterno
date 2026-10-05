@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.3.0"
+const agentVersion = "0.3.1"
 
 type Config struct {
 	ServerURL        string `json:"server_url"`
@@ -54,59 +54,73 @@ type EnrollRequest struct {
 }
 
 type EnrollResponse struct {
-	DeviceID string `json:"device_id"`
-	DeviceToken string `json:"device_token"`
-	HeartbeatSeconds int `json:"heartbeat_seconds"`
+	DeviceID         string `json:"device_id"`
+	DeviceToken      string `json:"device_token"`
+	HeartbeatSeconds int    `json:"heartbeat_seconds"`
 }
 
 type HeartbeatRequest struct {
-	Username string `json:"username,omitempty"`
-	LANIP string `json:"lan_ip,omitempty"`
-	Hostname string `json:"hostname,omitempty"`
-	Serial string `json:"serial,omitempty"`
-	OSVersion string `json:"os_version,omitempty"`
-	Architecture string `json:"architecture,omitempty"`
-	AgentVersion string `json:"agent_version"`
-	WiFiSSID string `json:"wifi_ssid,omitempty"`
-	Manufacturer string `json:"manufacturer,omitempty"`
-	Model string `json:"model,omitempty"`
-	HardwareUUID string `json:"hardware_uuid,omitempty"`
-	BatteryPercent *int `json:"battery_percent,omitempty"`
+	Username        string `json:"username,omitempty"`
+	LANIP           string `json:"lan_ip,omitempty"`
+	Hostname        string `json:"hostname,omitempty"`
+	Serial          string `json:"serial,omitempty"`
+	OSVersion       string `json:"os_version,omitempty"`
+	Architecture    string `json:"architecture,omitempty"`
+	AgentVersion    string `json:"agent_version"`
+	WiFiSSID        string `json:"wifi_ssid,omitempty"`
+	Manufacturer    string `json:"manufacturer,omitempty"`
+	Model           string `json:"model,omitempty"`
+	HardwareUUID    string `json:"hardware_uuid,omitempty"`
+	BatteryPercent  *int   `json:"battery_percent,omitempty"`
 	BitLockerStatus string `json:"bitlocker_status,omitempty"`
-	TPMStatus string `json:"tpm_status,omitempty"`
+	TPMStatus       string `json:"tpm_status,omitempty"`
 	AntivirusStatus string `json:"antivirus_status,omitempty"`
 }
 
 type HeartbeatResponse struct {
-	OK bool `json:"ok"`
-	LostMode bool `json:"lost_mode"`
-	NextHeartbeatSeconds int `json:"next_heartbeat_seconds"`
+	OK                   bool `json:"ok"`
+	LostMode             bool `json:"lost_mode"`
+	NextHeartbeatSeconds int  `json:"next_heartbeat_seconds"`
 }
 
 func main() {
 	handled, err := handlePlatformCommand(os.Args[1:])
 	if handled {
-		if err != nil { fatal(err) }
+		if err != nil {
+			fatal(err)
+		}
 		return
 	}
-	if err := runPlatform(agentLoop); err != nil { fatal(err) }
+	if err := runPlatform(agentLoop); err != nil {
+		fatal(err)
+	}
 }
 
 func agentLoop(ctx context.Context) error {
 	cfgPath := configPath()
 	cfg, err := loadConfig(cfgPath)
-	if err != nil { return err }
-	if cfg.DeviceToken == "" {
-		if err := enroll(&cfg); err != nil { return err }
-		if err := saveConfig(cfgPath, cfg); err != nil { return err }
+	if err != nil {
+		return err
 	}
+	if cfg.DeviceToken == "" {
+		if err := enroll(&cfg); err != nil {
+			return fmt.Errorf("initial enrollment failed: %w", err)
+		}
+		if err := saveConfig(cfgPath, cfg); err != nil {
+			return fmt.Errorf("save enrolled config: %w", err)
+		}
+	}
+
 	for {
 		next, err := heartbeat(cfg)
 		if err != nil {
-			fmt.Printf("%s heartbeat error: %v\n", time.Now().Format(time.RFC3339), err)
+			logLine("heartbeat error: %v", err)
 			next = 60
 		}
-		if next < 30 { next = 30 }
+		if next < 30 {
+			next = 30
+		}
+
 		timer := time.NewTimer(time.Duration(next) * time.Second)
 		select {
 		case <-ctx.Done():
@@ -118,26 +132,43 @@ func agentLoop(ctx context.Context) error {
 }
 
 func configPath() string {
-	if p := os.Getenv("YUDE_ASSET_GUARD_CONFIG"); p != "" { return p }
+	if p := os.Getenv("YUDE_ASSET_GUARD_CONFIG"); p != "" {
+		return p
+	}
 	base := os.Getenv("ProgramData")
-	if base == "" { base = "." }
+	if base == "" {
+		base = "."
+	}
 	return filepath.Join(base, "YUDEAssetGuard", "config.json")
 }
 
 func loadConfig(path string) (Config, error) {
 	var cfg Config
 	raw, err := os.ReadFile(path)
-	if err != nil { return cfg, fmt.Errorf("cannot read %s: %w", path, err) }
-	if err := json.Unmarshal(raw, &cfg); err != nil { return cfg, err }
-	cfg.ServerURL = strings.TrimRight(cfg.ServerURL, "/")
-	if cfg.ServerURL == "" { return cfg, errors.New("server_url is required") }
+	if err != nil {
+		return cfg, fmt.Errorf("cannot read %s: %w", path, err)
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return cfg, fmt.Errorf("invalid config JSON: %w", err)
+	}
+	cfg.ServerURL = strings.TrimRight(strings.TrimSpace(cfg.ServerURL), "/")
+	if cfg.ServerURL == "" {
+		return cfg, errors.New("server_url is required")
+	}
+	if runtime.GOOS == "windows" && !strings.HasPrefix(strings.ToLower(cfg.ServerURL), "https://") {
+		return cfg, errors.New("server_url must use HTTPS on Windows")
+	}
 	return cfg, nil
 }
 
 func saveConfig(path string, cfg Config) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil { return err }
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
 	raw, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	if err := os.WriteFile(path, raw, 0600); err != nil {
 		return err
 	}
@@ -145,19 +176,44 @@ func saveConfig(path string, cfg Config) error {
 }
 
 func enroll(cfg *Config) error {
-	if cfg.EnrollmentToken == "" { return errors.New("enrollment_token is required for first registration") }
+	if cfg.EnrollmentToken == "" {
+		return errors.New("enrollment_token is required for first registration")
+	}
 	host, _ := os.Hostname()
 	inv := collectInventory()
+	if runtime.GOOS == "windows" {
+		if err := validateInventory(inv); err != nil {
+			return err
+		}
+	}
+
 	payload := EnrollRequest{
-		EnrollmentToken: cfg.EnrollmentToken, Hostname: host, Serial: inv.Serial,
-		Platform: runtime.GOOS, OSVersion: inv.OSVersion, Architecture: runtime.GOARCH,
-		AgentVersion: agentVersion, Manufacturer: inv.Manufacturer, Model: inv.Model,
-		HardwareUUID: inv.HardwareUUID,
+		EnrollmentToken: cfg.EnrollmentToken,
+		Hostname:        host,
+		Serial:          inv.Serial,
+		Platform:        runtime.GOOS,
+		OSVersion:       inv.OSVersion,
+		Architecture:    runtime.GOARCH,
+		AgentVersion:    agentVersion,
+		Manufacturer:    inv.Manufacturer,
+		Model:           inv.Model,
+		HardwareUUID:    inv.HardwareUUID,
 	}
 	var out EnrollResponse
-	if err := postJSON(cfg.ServerURL+"/api/v1/enroll", "", payload, &out); err != nil { return err }
-	cfg.DeviceID, cfg.DeviceToken, cfg.EnrollmentToken = out.DeviceID, out.DeviceToken, ""
+	if err := postJSON(cfg.ServerURL+"/api/v1/enroll", "", payload, &out); err != nil {
+		return err
+	}
+	if out.DeviceID == "" || out.DeviceToken == "" {
+		return errors.New("server returned an incomplete enrollment response")
+	}
+
+	cfg.DeviceID = out.DeviceID
+	cfg.DeviceToken = out.DeviceToken
+	cfg.EnrollmentToken = ""
 	cfg.HeartbeatSeconds = out.HeartbeatSeconds
+	if cfg.HeartbeatSeconds <= 0 {
+		cfg.HeartbeatSeconds = 300
+	}
 	return nil
 }
 
@@ -165,31 +221,67 @@ func heartbeat(cfg Config) (int, error) {
 	host, _ := os.Hostname()
 	inv := collectInventory()
 	payload := HeartbeatRequest{
-		Hostname: host, Serial: inv.Serial, OSVersion: inv.OSVersion, Architecture: runtime.GOARCH,
-		AgentVersion: agentVersion, LANIP: firstLANIP(), WiFiSSID: inv.WiFiSSID,
-		Manufacturer: inv.Manufacturer, Model: inv.Model, HardwareUUID: inv.HardwareUUID,
-		BatteryPercent: inv.BatteryPercent, BitLockerStatus: inv.BitLockerStatus,
-		TPMStatus: inv.TPMStatus, AntivirusStatus: inv.AntivirusStatus,
-		Username: inv.Username,
+		Username:        inv.Username,
+		LANIP:           firstLANIP(),
+		Hostname:        host,
+		Serial:          inv.Serial,
+		OSVersion:       inv.OSVersion,
+		Architecture:    runtime.GOARCH,
+		AgentVersion:    agentVersion,
+		WiFiSSID:        inv.WiFiSSID,
+		Manufacturer:    inv.Manufacturer,
+		Model:           inv.Model,
+		HardwareUUID:    inv.HardwareUUID,
+		BatteryPercent:  inv.BatteryPercent,
+		BitLockerStatus: inv.BitLockerStatus,
+		TPMStatus:       inv.TPMStatus,
+		AntivirusStatus: inv.AntivirusStatus,
 	}
 	var out HeartbeatResponse
-	if err := postJSON(cfg.ServerURL+"/api/v1/heartbeat", cfg.DeviceToken, payload, &out); err != nil { return 0, err }
-	if out.NextHeartbeatSeconds > 0 { return out.NextHeartbeatSeconds, nil }
-	if cfg.HeartbeatSeconds > 0 { return cfg.HeartbeatSeconds, nil }
+	if err := postJSON(cfg.ServerURL+"/api/v1/heartbeat", cfg.DeviceToken, payload, &out); err != nil {
+		return 0, err
+	}
+	if out.NextHeartbeatSeconds > 0 {
+		return out.NextHeartbeatSeconds, nil
+	}
+	if cfg.HeartbeatSeconds > 0 {
+		return cfg.HeartbeatSeconds, nil
+	}
 	return 300, nil
 }
 
 func postJSON(url, bearer string, payload any, out any) error {
-	body, err := json.Marshal(payload); if err != nil { return err }
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body)); if err != nil { return err }
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
 	req.Header.Set("Content-Type", "application/json")
-	if bearer != "" { req.Header.Set("Authorization", "Bearer "+bearer) }
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+
 	client := &http.Client{Timeout: 20 * time.Second}
-	resp, err := client.Do(req); if err != nil { return err }
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
 	defer resp.Body.Close()
+
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 { return fmt.Errorf("server returned %s: %s", resp.Status, strings.TrimSpace(string(raw))) }
-	return json.Unmarshal(raw, out)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("server returned %s: %s", resp.Status, strings.TrimSpace(string(raw)))
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("invalid server response: %w", err)
+	}
+	return nil
 }
 
 func firstLANIP() string {
@@ -222,4 +314,11 @@ func firstLANIP() string {
 	return ""
 }
 
-func fatal(err error) { fmt.Fprintln(os.Stderr, err); os.Exit(1) }
+func logLine(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "%s "+format+"\n", append([]any{time.Now().Format(time.RFC3339)}, args...)...)
+}
+
+func fatal(err error) {
+	fmt.Fprintln(os.Stderr, err)
+	os.Exit(1)
+}

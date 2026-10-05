@@ -4,22 +4,23 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os/exec"
 	"strconv"
 	"strings"
 )
 
 type inventoryJSON struct {
-	Username string `json:"username"`
-	Serial string `json:"serial"`
-	OSVersion string `json:"os_version"`
-	Manufacturer string `json:"manufacturer"`
-	Model string `json:"model"`
-	HardwareUUID string `json:"hardware_uuid"`
-	WiFiSSID string `json:"wifi_ssid"`
-	BatteryPercent *int `json:"battery_percent"`
+	Username        string `json:"username"`
+	Serial          string `json:"serial"`
+	OSVersion       string `json:"os_version"`
+	Manufacturer    string `json:"manufacturer"`
+	Model           string `json:"model"`
+	HardwareUUID    string `json:"hardware_uuid"`
+	WiFiSSID        string `json:"wifi_ssid"`
+	BatteryPercent  *int   `json:"battery_percent"`
 	BitLockerStatus string `json:"bitlocker_status"`
-	TPMStatus string `json:"tpm_status"`
+	TPMStatus       string `json:"tpm_status"`
 	AntivirusStatus string `json:"antivirus_status"`
 }
 
@@ -57,34 +58,53 @@ if ($LASTEXITCODE -eq 0 -and $netsh) {
  antivirus_status=$av
 } | ConvertTo-Json -Compress
 `
-	cmd := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
 	out, err := cmd.Output()
-	if err != nil { return Inventory{} }
+	if err != nil {
+		logLine("inventory collection failed: %v", err)
+		return Inventory{}
+	}
+
 	var parsed inventoryJSON
-	if json.Unmarshal(out, &parsed) != nil { return Inventory{} }
+	if err := json.Unmarshal(out, &parsed); err != nil {
+		logLine("inventory JSON parse failed: %v", err)
+		return Inventory{}
+	}
 	if parsed.BatteryPercent != nil && (*parsed.BatteryPercent < 0 || *parsed.BatteryPercent > 100) {
 		parsed.BatteryPercent = nil
 	}
+
 	return Inventory{
-		Username: strings.TrimSpace(parsed.Username),
-		Serial: strings.TrimSpace(parsed.Serial),
-		OSVersion: strings.TrimSpace(parsed.OSVersion),
-		Manufacturer: strings.TrimSpace(parsed.Manufacturer),
-		Model: strings.TrimSpace(parsed.Model),
-		HardwareUUID: strings.TrimSpace(parsed.HardwareUUID),
-		WiFiSSID: strings.TrimSpace(parsed.WiFiSSID),
-		BatteryPercent: parsed.BatteryPercent,
+		Username:        strings.TrimSpace(parsed.Username),
+		Serial:          strings.TrimSpace(parsed.Serial),
+		OSVersion:       strings.TrimSpace(parsed.OSVersion),
+		Manufacturer:    strings.TrimSpace(parsed.Manufacturer),
+		Model:           strings.TrimSpace(parsed.Model),
+		HardwareUUID:    strings.TrimSpace(parsed.HardwareUUID),
+		WiFiSSID:        strings.TrimSpace(parsed.WiFiSSID),
+		BatteryPercent:  parsed.BatteryPercent,
 		BitLockerStatus: normalizeBitLocker(parsed.BitLockerStatus),
-		TPMStatus: strings.TrimSpace(parsed.TPMStatus),
+		TPMStatus:       strings.TrimSpace(parsed.TPMStatus),
 		AntivirusStatus: strings.TrimSpace(parsed.AntivirusStatus),
 	}
+}
+
+func validateInventory(inv Inventory) error {
+	if inv.Serial == "" && inv.HardwareUUID == "" {
+		return fmt.Errorf("inventory has neither BIOS serial nor hardware UUID")
+	}
+	return nil
 }
 
 func normalizeBitLocker(v string) string {
 	v = strings.TrimSpace(v)
 	if n, err := strconv.Atoi(v); err == nil {
-		if n == 1 { return "On" }
-		if n == 0 { return "Off" }
+		switch n {
+		case 1:
+			return "On"
+		case 0:
+			return "Off"
+		}
 	}
 	return v
 }
