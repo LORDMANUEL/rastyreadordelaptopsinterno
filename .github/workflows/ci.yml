@@ -21,6 +21,20 @@ jobs:
         run: pip install -r server/requirements.txt
       - name: Compile Python sources
         run: python -m compileall -q server/app
+      - name: Import application
+        env:
+          ENROLLMENT_TOKEN: ci-enrollment-token
+          ADMIN_TOKEN: ci-admin-token
+          DATABASE_URL: sqlite:////tmp/yude_asset_guard_ci.db
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, "server")
+          from app.main import app, startup
+          startup()
+          assert app.title == "YUDE Asset Guard"
+          print("FastAPI startup OK")
+          PY
 
   windows-agent:
     runs-on: ubuntu-latest
@@ -29,13 +43,14 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23.x"
-      - name: Download Go modules
+          cache-dependency-path: agent-go/go.sum
+      - name: Resolve Go modules for all platforms
         working-directory: agent-go
-        run: go mod download
+        run: go mod tidy
       - name: Format sources
         working-directory: agent-go
         run: gofmt -w .
-      - name: Vet
+      - name: Vet Linux build
         working-directory: agent-go
         run: go vet ./...
       - name: Build Windows agent
@@ -43,6 +58,7 @@ jobs:
         env:
           GOOS: windows
           GOARCH: amd64
+          CGO_ENABLED: "0"
         run: go build -trimpath -ldflags="-s -w" -o YudeAssetGuard.exe .
       - uses: actions/upload-artifact@v4
         with:
@@ -57,10 +73,15 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - uses: android-actions/setup-android@v3
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+      - name: Verify Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -d "$ANDROID_HOME"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
       - name: Build debug APK
         run: gradle -p android-mdm :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
