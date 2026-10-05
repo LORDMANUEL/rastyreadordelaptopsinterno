@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>YUDE Asset Guard</title>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#eaf0ff;background:#0b1020}
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(135deg,#0b1020,#111a33);min-height:100vh}
+    header{padding:24px 32px;border-bottom:1px solid #26314f;display:flex;justify-content:space-between;gap:16px;align-items:center}
+    h1,h2{margin:0}.muted{color:#96a3c7}.small{font-size:12px}
+    main{padding:24px 32px}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}
+    .card,.panel{background:#121a2d;border:1px solid #26314f;border-radius:14px;padding:18px}
+    .value{font-size:32px;font-weight:700;margin-top:8px}
+    table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #26314f;font-size:14px}
+    tbody tr{cursor:pointer}tbody tr:hover{background:#17223d}
+    button,input{background:#0d1530;color:#fff;border:1px solid #33446f;border-radius:9px;padding:10px}
+    button{cursor:pointer}.danger{border-color:#7a303c}.lost{color:#ff7474}.online{color:#75e6a4}.offline{color:#f4c76a}
+    .detail{display:none;margin-top:18px}.detail.open{display:block}
+    .detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px}
+    .field{background:#0d1530;border-radius:10px;padding:12px}.field b{display:block;margin-top:4px;word-break:break-word}
+    .actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+    .auth{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.auth input{min-width:170px}
+    #app{display:none}#loginBox{max-width:420px;margin:60px auto}
+    .error{color:#ff8b8b;margin-top:10px}
+    @media(max-width:1000px){.cards,.detail-grid{grid-template-columns:1fr 1fr}main,header{padding:18px}.panel{overflow:auto}}
+    @media(max-width:620px){.cards,.detail-grid{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
+  </style>
+</head>
+<body>
+<header>
+  <div><h1>YUDE Asset Guard</h1><div class="muted">Inventario, compliance y monitoreo de activos corporativos</div></div>
+  <div id="sessionControls" class="auth" style="display:none">
+    <span id="sessionUser" class="muted"></span>
+    <button onclick="logout()">Cerrar sesión</button>
+  </div>
+</header>
+
+<main>
+  <section id="loginBox" class="panel">
+    <h2>Acceso administrativo</h2>
+    <div class="muted" style="margin:8px 0 18px">Ingrese sus credenciales autorizadas.</div>
+    <div class="auth">
+      <input id="username" autocomplete="username" placeholder="Usuario">
+      <input id="password" type="password" autocomplete="current-password" placeholder="Contraseña">
+      <button onclick="login()">Ingresar</button>
+    </div>
+    <div id="loginError" class="error"></div>
+  </section>
+
+  <div id="app">
+    <section class="cards">
+      <div class="card"><div class="muted">Equipos</div><div id="total" class="value">0</div></div>
+      <div class="card"><div class="muted">Online</div><div id="online" class="value">0</div></div>
+      <div class="card"><div class="muted">Offline</div><div id="offline" class="value">0</div></div>
+      <div class="card"><div class="muted">Modo pérdida</div><div id="lost" class="value">0</div></div>
+    </section>
+
+    <section class="panel">
+      <table>
+        <thead><tr><th>Activo</th><th>Equipo</th><th>Usuario</th><th>Sucursal</th><th>Plataforma</th><th>IP pública</th><th>Último contacto</th><th>Estado</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+
+    <section id="detail" class="panel detail">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
+        <div><h2 id="detailTitle">Equipo</h2><div id="detailSubtitle" class="muted"></div></div>
+        <button onclick="closeDetail()">Cerrar</button>
+      </div>
+      <div id="detailGrid" class="detail-grid"></div>
+      <div class="actions">
+        <button id="lostButton" class="danger" onclick="toggleLostMode()">Activar modo pérdida</button>
+        <button onclick="loadHistory()">Historial</button>
+        <button onclick="loadDevices()">Actualizar</button>
+      </div>
+      <div id="historyBox" style="display:none;margin-top:16px;overflow:auto">
+        <table>
+          <thead><tr><th>Fecha</th><th>Evento</th><th>Usuario</th><th>SSID</th><th>IP LAN</th><th>IP pública</th><th>Batería</th></tr></thead>
+          <tbody id="historyRows"></tbody>
+        </table>
+      </div>
+      <div class="muted small" style="margin-top:12px">El modo pérdida aumenta la frecuencia de heartbeat. No activa cámara, micrófono, keylogger ni lectura de comunicaciones.</div>
+    </section>
+  </div>
+</main>
+
+<script>
+let devices=[];
+let selected=null;
+
+function esc(v){return String(v??'-').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+function field(label,value){return '<div class="field"><span class="muted small">'+esc(label)+'</span><b>'+esc(value??'-')+'</b></div>'}
+
+async function api(url,options={}){
+  const response=await fetch(url,{credentials:'same-origin',...options});
+  if(response.status===401){
+    showLogin();
+    throw new Error('authentication required');
+  }
+  return response;
+}
+
+async function login(){
+  loginError.textContent='';
+  const response=await fetch('/api/v1/auth/login',{
+    method:'POST',
+    credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:username.value.trim(),password:password.value})
+  });
+  if(!response.ok){
+    const body=await response.json().catch(()=>({detail:'No se pudo iniciar sesión'}));
+    loginError.textContent=body.detail||'No se pudo iniciar sesión';
+    return;
+  }
+  password.value='';
+  await initialize();
+}
+
+async function logout(){
+  await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin'});
+  devices=[]; selected=null; showLogin();
+}
+
+function showLogin(){
+  loginBox.style.display='block';
+  app.style.display='none';
+  sessionControls.style.display='none';
+}
+
+function showApp(usernameValue){
+  loginBox.style.display='none';
+  app.style.display='block';
+  sessionControls.style.display='flex';
+  sessionUser.textContent=usernameValue;
+}
+
+async function initialize(){
+  const me=await fetch('/api/v1/auth/me',{credentials:'same-origin'});
+  if(!me.ok){showLogin();return}
+  const identity=await me.json();
+  showApp(identity.username);
+  await loadDevices();
+}
+
+async function loadDevices(){
+  const r=await api('/api/v1/devices');
+  if(!r.ok){alert('No se pudieron cargar los dispositivos');return}
+  devices=await r.json();
+  total.textContent=devices.length;
+  online.textContent=devices.filter(x=>x.online).length;
+  offline.textContent=devices.filter(x=>!x.online).length;
+  lost.textContent=devices.filter(x=>x.lost_mode).length;
+  rows.innerHTML=devices.map(x=>'<tr onclick="openDetail(\''+x.id+'\')">'+
+    '<td>'+esc(x.asset_tag||x.serial||'-')+'</td>'+
+    '<td>'+esc(((x.manufacturer||'')+' '+(x.model||x.hostname)).trim())+'</td>'+
+    '<td>'+esc(x.username||'-')+'</td><td>'+esc(x.branch||'-')+'</td>'+
+    '<td>'+esc(x.platform||'-')+'</td><td>'+esc(x.public_ip||'-')+'</td>'+
+    '<td>'+new Date(x.last_seen).toLocaleString()+'</td>'+
+    '<td class="'+(x.lost_mode?'lost':(x.online?'online':'offline'))+'">'+(x.lost_mode?'PÉRDIDA':(x.online?'ONLINE':'OFFLINE'))+'</td>'+
+  '</tr>').join('');
+  if(selected){
+    const fresh=devices.find(x=>x.id===selected.id);
+    if(fresh) renderDetail(fresh);
+  }
+}
+
+function openDetail(id){
+  const item=devices.find(x=>x.id===id);
+  if(!item)return;
+  selected=item;
+  renderDetail(item);
+  detail.classList.add('open');
+  detail.scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function renderDetail(x){
+  selected=x;
+  detailTitle.textContent=x.asset_tag||x.hostname;
+  detailSubtitle.textContent=((x.manufacturer||'')+' '+(x.model||'')).trim()+' · '+(x.serial||'sin serial');
+  detailGrid.innerHTML=
+    field('Responsable',x.assigned_to)+field('Sucursal',x.branch)+field('Usuario',x.username)+field('Hostname',x.hostname)+
+    field('Serial',x.serial)+field('UUID',x.hardware_uuid)+field('Sistema operativo',x.os_version)+field('Arquitectura',x.architecture)+
+    field('IP LAN',x.lan_ip)+field('IP pública',x.public_ip)+field('Wi-Fi / SSID',x.wifi_ssid)+field('Batería',x.battery_percent==null?'-':x.battery_percent+'%')+
+    field('BitLocker',x.bitlocker_status)+field('TPM',x.tpm_status)+field('Antivirus',x.antivirus_status)+field('Agente',x.agent_version);
+  lostButton.textContent=x.lost_mode?'Desactivar modo pérdida':'Activar modo pérdida';
+}
+
+async function loadHistory(){
+  if(!selected)return;
+  const r=await api('/api/v1/devices/'+selected.id+'/history');
+  if(!r.ok){alert('No se pudo cargar el historial');return}
+  const data=await r.json();
+  historyRows.innerHTML=data.map(x=>'<tr>'+
+    '<td>'+new Date(x.created_at).toLocaleString()+'</td>'+
+    '<td>'+esc(x.reason)+'</td>'+
+    '<td>'+esc(x.username||'-')+'</td>'+
+    '<td>'+esc(x.wifi_ssid||'-')+'</td>'+
+    '<td>'+esc(x.lan_ip||'-')+'</td>'+
+    '<td>'+esc(x.public_ip||'-')+'</td>'+
+    '<td>'+esc(x.battery_percent==null?'-':x.battery_percent+'%')+'</td>'+
+  '</tr>').join('');
+  historyBox.style.display='block';
+}
+
+function closeDetail(){
+  detail.classList.remove('open');
+  historyBox.style.display='none';
+  historyRows.innerHTML='';
+  selected=null;
+}
+
+async function toggleLostMode(){
+  if(!selected)return;
+  const enable=!selected.lost_mode;
+  const reason=prompt(enable?'Motivo para activar modo pérdida:':'Motivo para desactivar modo pérdida:');
+  if(!reason||reason.trim().length<3)return;
+  const r=await api('/api/v1/devices/'+selected.id+'/lost-mode',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({enabled:enable,reason:reason.trim()})
+  });
+  if(!r.ok){alert('No se pudo cambiar el modo pérdida');return}
+  await loadDevices();
+}
+
+password.addEventListener('keydown',e=>{if(e.key==='Enter')login()});
+window.addEventListener('load',initialize);
+</script>
+</body>
+</html>

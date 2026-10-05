@@ -1,0 +1,5 @@
+{
+  "server_url": "https://assets.example.com",
+  "enrollment_token": "ONE_TIME_OR_DEPLOYMENT_ENROLLMENT_TOKEN",
+  "heartbeat_seconds": 300
+}
