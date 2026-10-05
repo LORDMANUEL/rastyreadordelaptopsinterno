@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -30,6 +30,15 @@ class Device(Base):
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     lan_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
     public_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    wifi_ssid: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    manufacturer: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    hardware_uuid: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    battery_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bitlocker_status: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    tpm_status: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    antivirus_status: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     lost_mode: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
