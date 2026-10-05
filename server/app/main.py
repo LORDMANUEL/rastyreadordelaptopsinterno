@@ -14,6 +14,7 @@ from .auth import (
     ADMIN_PASSWORD_SALT,
     ADMIN_USERNAME,
     SESSION_SECRET,
+    SESSION_TTL_SECONDS,
     create_session,
     parse_session,
     verify_admin_credentials,
@@ -117,7 +118,7 @@ def login(payload: LoginRequest, response: Response):
         secure=True,
         samesite="strict",
         path="/",
-        max_age=28800,
+        max_age=SESSION_TTL_SECONDS,
     )
     return {"ok": True, "username": payload.username}
 
