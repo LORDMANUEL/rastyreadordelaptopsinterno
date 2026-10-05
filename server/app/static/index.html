@@ -72,7 +72,14 @@
       <div id="detailGrid" class="detail-grid"></div>
       <div class="actions">
         <button id="lostButton" class="danger" onclick="toggleLostMode()">Activar modo pérdida</button>
+        <button onclick="loadHistory()">Historial</button>
         <button onclick="loadDevices()">Actualizar</button>
+      </div>
+      <div id="historyBox" style="display:none;margin-top:16px;overflow:auto">
+        <table>
+          <thead><tr><th>Fecha</th><th>Evento</th><th>Usuario</th><th>SSID</th><th>IP LAN</th><th>IP pública</th><th>Batería</th></tr></thead>
+          <tbody id="historyRows"></tbody>
+        </table>
       </div>
       <div class="muted small" style="margin-top:12px">El modo pérdida aumenta la frecuencia de heartbeat. No activa cámara, micrófono, keylogger ni lectura de comunicaciones.</div>
     </section>
@@ -181,7 +188,29 @@ function renderDetail(x){
   lostButton.textContent=x.lost_mode?'Desactivar modo pérdida':'Activar modo pérdida';
 }
 
-function closeDetail(){detail.classList.remove('open');selected=null}
+async function loadHistory(){
+  if(!selected)return;
+  const r=await api('/api/v1/devices/'+selected.id+'/history');
+  if(!r.ok){alert('No se pudo cargar el historial');return}
+  const data=await r.json();
+  historyRows.innerHTML=data.map(x=>'<tr>'+
+    '<td>'+new Date(x.created_at).toLocaleString()+'</td>'+
+    '<td>'+esc(x.reason)+'</td>'+
+    '<td>'+esc(x.username||'-')+'</td>'+
+    '<td>'+esc(x.wifi_ssid||'-')+'</td>'+
+    '<td>'+esc(x.lan_ip||'-')+'</td>'+
+    '<td>'+esc(x.public_ip||'-')+'</td>'+
+    '<td>'+esc(x.battery_percent==null?'-':x.battery_percent+'%')+'</td>'+
+  '</tr>').join('');
+  historyBox.style.display='block';
+}
+
+function closeDetail(){
+  detail.classList.remove('open');
+  historyBox.style.display='none';
+  historyRows.innerHTML='';
+  selected=null;
+}
 
 async function toggleLostMode(){
   if(!selected)return;
