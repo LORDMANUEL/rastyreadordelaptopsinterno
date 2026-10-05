@@ -40,9 +40,11 @@ jobs:
           from app.database import engine
           from app.main import app, validate_configuration
           validate_configuration()
-          cols = {c["name"] for c in inspect(engine).get_columns("devices")}
+          inspector = inspect(engine)
+          cols = {c["name"] for c in inspector.get_columns("devices")}
           required = {"wifi_ssid", "hardware_uuid", "bitlocker_status", "tpm_status", "antivirus_status"}
           assert required.issubset(cols), cols
+          assert "device_observations" in inspector.get_table_names()
           assert app.title == "YUDE Asset Guard"
           print("FastAPI + migrations OK")
           PY
