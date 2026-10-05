@@ -1,0 +1,4 @@
+<resources>
+    <string name="app_name">YUDE Asset Guard</string>
+    <string name="device_admin_description">Administración de tablets corporativas YUDE mediante Android Enterprise.</string>
+</resources>
