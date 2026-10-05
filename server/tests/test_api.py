@@ -88,6 +88,15 @@ def test_enrollment_reenrollment_heartbeat_and_lost_mode():
         assert heartbeat_lost.json()["lost_mode"] is True
         assert heartbeat_lost.json()["next_heartbeat_seconds"] == 60
 
+        history = client.get(
+            f"/api/v1/devices/{second_data['device_id']}/history",
+            headers={"X-Admin-Token": "ci-admin-token"},
+        )
+        assert history.status_code == 200, history.text
+        reasons = [item["reason"] for item in history.json()]
+        assert "LOST_MODE_HEARTBEAT" in reasons
+        assert any(reason in reasons for reason in ("DEVICE_ENROLLED", "DEVICE_REENROLLED"))
+
 
 def test_admin_token_required():
     with TestClient(app) as client:
