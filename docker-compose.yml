@@ -1,0 +1,32 @@
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - assetguard_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: ./server
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      ENROLLMENT_TOKEN: ${ENROLLMENT_TOKEN}
+      ADMIN_TOKEN: ${ADMIN_TOKEN}
+      HEARTBEAT_OFFLINE_SECONDS: ${HEARTBEAT_OFFLINE_SECONDS:-600}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+volumes:
+  assetguard_pgdata:
