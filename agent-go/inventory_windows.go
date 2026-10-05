@@ -34,7 +34,15 @@ $b=Get-CimInstance Win32_Battery | Select-Object -First 1
 $bl=(Get-BitLockerVolume -MountPoint $env:SystemDrive).ProtectionStatus
 $tpm=Get-Tpm
 $av=(Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntiVirusProduct | Select-Object -ExpandProperty displayName) -join ', '
-$ssid=((netsh wlan show interfaces) | Select-String '^\s*SSID\s*:' | Select-Object -First 1).ToString().Split(':',2)[1].Trim()
+$ssid=''
+$netsh=netsh wlan show interfaces 2>$null
+if ($LASTEXITCODE -eq 0 -and $netsh) {
+ $ssidLine=$netsh | Select-String '^\s*SSID\s*:' | Select-Object -First 1
+ if ($ssidLine) {
+  $parts=$ssidLine.ToString().Split(':',2)
+  if ($parts.Count -eq 2) { $ssid=$parts[1].Trim() }
+ }
+}
 [pscustomobject]@{
  username=$cs.UserName
  serial=$bios.SerialNumber
@@ -54,6 +62,9 @@ $ssid=((netsh wlan show interfaces) | Select-String '^\s*SSID\s*:' | Select-Obje
 	if err != nil { return Inventory{} }
 	var parsed inventoryJSON
 	if json.Unmarshal(out, &parsed) != nil { return Inventory{} }
+	if parsed.BatteryPercent != nil && (*parsed.BatteryPercent < 0 || *parsed.BatteryPercent > 100) {
+		parsed.BatteryPercent = nil
+	}
 	return Inventory{
 		Username: strings.TrimSpace(parsed.Username),
 		Serial: strings.TrimSpace(parsed.Serial),
