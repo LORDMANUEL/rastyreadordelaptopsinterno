@@ -54,3 +54,17 @@ class AuditEvent(Base):
     actor: Mapped[str] = mapped_column(String(120), default="system")
     detail: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DeviceObservation(Base):
+    __tablename__ = "device_observations"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    device_id: Mapped[str] = mapped_column(String(36), index=True)
+    reason: Mapped[str] = mapped_column(String(48), index=True)
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lan_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    public_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    wifi_ssid: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    battery_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
