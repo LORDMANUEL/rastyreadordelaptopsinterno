@@ -4,11 +4,21 @@ import secrets
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .auth import (
+    ADMIN_PASSWORD_HASH,
+    ADMIN_PASSWORD_SALT,
+    ADMIN_USERNAME,
+    SESSION_SECRET,
+    create_session,
+    parse_session,
+    verify_admin_credentials,
+)
+from .auth_schemas import LoginRequest
 from .database import SessionLocal
 from .models import AuditEvent, Device
 from .schemas import DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
@@ -25,8 +35,17 @@ app = FastAPI(title=APP_NAME, version="0.2.0")
 
 @app.on_event("startup")
 def startup() -> None:
-    if not ENROLLMENT_TOKEN or not ADMIN_TOKEN:
-        raise RuntimeError("ENROLLMENT_TOKEN and ADMIN_TOKEN are required")
+    required = {
+        "ENROLLMENT_TOKEN": ENROLLMENT_TOKEN,
+        "ADMIN_TOKEN": ADMIN_TOKEN,
+        "ADMIN_USERNAME": ADMIN_USERNAME,
+        "ADMIN_PASSWORD_SALT": ADMIN_PASSWORD_SALT,
+        "ADMIN_PASSWORD_HASH": ADMIN_PASSWORD_HASH,
+        "SESSION_SECRET": SESSION_SECRET,
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        raise RuntimeError("missing required configuration: " + ", ".join(missing))
 
 
 def db_session():
@@ -41,10 +60,20 @@ def sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
-def require_admin(x_admin_token: str = Header(default="")) -> str:
-    if not secrets.compare_digest(x_admin_token, ADMIN_TOKEN):
-        raise HTTPException(status_code=401, detail="invalid admin token")
-    return "admin"
+def require_admin(
+    request: Request,
+    x_admin_token: str = Header(default=""),
+    assetguard_session: str | None = Cookie(default=None),
+) -> str:
+    if x_admin_token and secrets.compare_digest(x_admin_token, ADMIN_TOKEN):
+        return "automation"
+
+    if assetguard_session:
+        identity = parse_session(assetguard_session)
+        if identity is not None:
+            return identity.username
+
+    raise HTTPException(status_code=401, detail="authentication required")
 
 
 def device_from_auth(
@@ -74,6 +103,40 @@ def health():
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
     return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+
+
+@app.post("/api/v1/auth/login")
+def login(payload: LoginRequest, response: Response):
+    if not verify_admin_credentials(payload.username, payload.password):
+        raise HTTPException(status_code=401, detail="invalid credentials")
+
+    response.set_cookie(
+        key="assetguard_session",
+        value=create_session(payload.username),
+        httponly=True,
+        secure=True,
+        samesite="strict",
+        path="/",
+        max_age=28800,
+    )
+    return {"ok": True, "username": payload.username}
+
+
+@app.post("/api/v1/auth/logout")
+def logout(response: Response):
+    response.delete_cookie(
+        key="assetguard_session",
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="strict",
+    )
+    return {"ok": True}
+
+
+@app.get("/api/v1/auth/me")
+def auth_me(actor: str = Depends(require_admin)):
+    return {"authenticated": True, "username": actor}
 
 
 @app.post("/api/v1/enroll", response_model=EnrollResponse)
