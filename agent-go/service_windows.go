@@ -167,7 +167,7 @@ func installService() error {
 	if err != nil {
 		return err
 	}
-	binPath := fmt.Sprintf(""%s"", exePath)
+	binPath := fmt.Sprintf("\"%s\"", exePath)
 	if err := runSC(
 		"create", serviceName,
 		"binPath=", binPath,
