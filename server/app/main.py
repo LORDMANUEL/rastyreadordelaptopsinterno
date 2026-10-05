@@ -39,10 +39,6 @@ def startup() -> None:
     required = {
         "ENROLLMENT_TOKEN": ENROLLMENT_TOKEN,
         "ADMIN_TOKEN": ADMIN_TOKEN,
-        "ADMIN_USERNAME": ADMIN_USERNAME,
-        "ADMIN_PASSWORD_SALT": ADMIN_PASSWORD_SALT,
-        "ADMIN_PASSWORD_HASH": ADMIN_PASSWORD_HASH,
-        "SESSION_SECRET": SESSION_SECRET,
     }
     missing = [name for name, value in required.items() if not value]
     if missing:
@@ -108,6 +104,8 @@ def dashboard():
 
 @app.post("/api/v1/auth/login")
 def login(payload: LoginRequest, response: Response):
+    if not all((ADMIN_USERNAME, ADMIN_PASSWORD_SALT, ADMIN_PASSWORD_HASH, SESSION_SECRET)):
+        raise HTTPException(status_code=503, detail="web authentication is not configured")
     if not verify_admin_credentials(payload.username, payload.password):
         raise HTTPException(status_code=401, detail="invalid credentials")
 
