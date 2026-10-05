@@ -62,9 +62,8 @@ def device_from_auth(
 
 
 def client_ip(request: Request) -> str | None:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
+    # Uvicorn's trusted proxy middleware normalizes request.client.
+    # Do not trust a raw X-Forwarded-For header from arbitrary clients here.
     return request.client.host if request.client else None
 
 
