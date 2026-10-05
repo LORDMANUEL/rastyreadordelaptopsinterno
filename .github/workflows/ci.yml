@@ -38,8 +38,8 @@ jobs:
           python - <<'PY'
           from sqlalchemy import inspect
           from app.database import engine
-          from app.main import app, startup
-          startup()
+          from app.main import app, validate_configuration
+          validate_configuration()
           cols = {c["name"] for c in inspect(engine).get_columns("devices")}
           required = {"wifi_ssid", "hardware_uuid", "bitlocker_status", "tpm_status", "antivirus_status"}
           assert required.issubset(cols), cols
