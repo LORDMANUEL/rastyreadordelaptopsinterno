@@ -1,6 +1,7 @@
 import hashlib
 import os
 import secrets
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,11 +32,7 @@ HEARTBEAT_SECONDS = int(os.getenv("HEARTBEAT_SECONDS", "300"))
 OFFLINE_SECONDS = int(os.getenv("HEARTBEAT_OFFLINE_SECONDS", "600"))
 STATIC_DIR = Path(__file__).parent / "static"
 
-app = FastAPI(title=APP_NAME, version="0.2.0")
-
-
-@app.on_event("startup")
-def startup() -> None:
+def validate_configuration() -> None:
     required = {
         "ENROLLMENT_TOKEN": ENROLLMENT_TOKEN,
         "ADMIN_TOKEN": ADMIN_TOKEN,
@@ -43,6 +40,15 @@ def startup() -> None:
     missing = [name for name, value in required.items() if not value]
     if missing:
         raise RuntimeError("missing required configuration: " + ", ".join(missing))
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    validate_configuration()
+    yield
+
+
+app = FastAPI(title=APP_NAME, version="0.3.0", lifespan=lifespan)
 
 
 def db_session():
@@ -55,6 +61,12 @@ def db_session():
 
 def sha256(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
 
 
 def require_admin(
@@ -230,7 +242,7 @@ def list_devices(_: str = Depends(require_admin), db: Session = Depends(db_sessi
     devices = db.scalars(select(Device).order_by(Device.last_seen.desc())).all()
     output = []
     for d in devices:
-        age = max(0, int((now - d.last_seen).total_seconds()))
+        age = max(0, int((now - as_utc(d.last_seen)).total_seconds()))
         output.append({
             "id": d.id,
             "hostname": d.hostname,
