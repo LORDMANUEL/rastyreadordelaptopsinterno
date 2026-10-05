@@ -21,6 +21,9 @@
     .detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px}
     .field{background:#0d1530;border-radius:10px;padding:12px}.field b{display:block;margin-top:4px;word-break:break-word}
     .actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+    .auth{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.auth input{min-width:170px}
+    #app{display:none}#loginBox{max-width:420px;margin:60px auto}
+    .error{color:#ff8b8b;margin-top:10px}
     @media(max-width:1000px){.cards,.detail-grid{grid-template-columns:1fr 1fr}main,header{padding:18px}.panel{overflow:auto}}
     @media(max-width:620px){.cards,.detail-grid{grid-template-columns:1fr}header{align-items:flex-start;flex-direction:column}}
   </style>
@@ -28,49 +31,116 @@
 <body>
 <header>
   <div><h1>YUDE Asset Guard</h1><div class="muted">Inventario, compliance y monitoreo de activos corporativos</div></div>
-  <div><input id="token" type="password" placeholder="Admin token"><button onclick="loadDevices()">Conectar</button></div>
+  <div id="sessionControls" class="auth" style="display:none">
+    <span id="sessionUser" class="muted"></span>
+    <button onclick="logout()">Cerrar sesión</button>
+  </div>
 </header>
+
 <main>
-  <section class="cards">
-    <div class="card"><div class="muted">Equipos</div><div id="total" class="value">0</div></div>
-    <div class="card"><div class="muted">Online</div><div id="online" class="value">0</div></div>
-    <div class="card"><div class="muted">Offline</div><div id="offline" class="value">0</div></div>
-    <div class="card"><div class="muted">Modo pérdida</div><div id="lost" class="value">0</div></div>
+  <section id="loginBox" class="panel">
+    <h2>Acceso administrativo</h2>
+    <div class="muted" style="margin:8px 0 18px">Ingrese sus credenciales autorizadas.</div>
+    <div class="auth">
+      <input id="username" autocomplete="username" placeholder="Usuario">
+      <input id="password" type="password" autocomplete="current-password" placeholder="Contraseña">
+      <button onclick="login()">Ingresar</button>
+    </div>
+    <div id="loginError" class="error"></div>
   </section>
 
-  <section class="panel">
-    <table>
-      <thead><tr><th>Activo</th><th>Equipo</th><th>Usuario</th><th>Sucursal</th><th>Plataforma</th><th>IP pública</th><th>Último contacto</th><th>Estado</th></tr></thead>
-      <tbody id="rows"></tbody>
-    </table>
-  </section>
+  <div id="app">
+    <section class="cards">
+      <div class="card"><div class="muted">Equipos</div><div id="total" class="value">0</div></div>
+      <div class="card"><div class="muted">Online</div><div id="online" class="value">0</div></div>
+      <div class="card"><div class="muted">Offline</div><div id="offline" class="value">0</div></div>
+      <div class="card"><div class="muted">Modo pérdida</div><div id="lost" class="value">0</div></div>
+    </section>
 
-  <section id="detail" class="panel detail">
-    <div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
-      <div><h2 id="detailTitle">Equipo</h2><div id="detailSubtitle" class="muted"></div></div>
-      <button onclick="closeDetail()">Cerrar</button>
-    </div>
-    <div id="detailGrid" class="detail-grid"></div>
-    <div class="actions">
-      <button id="lostButton" class="danger" onclick="toggleLostMode()">Activar modo pérdida</button>
-      <button onclick="loadDevices()">Actualizar</button>
-    </div>
-    <div class="muted small" style="margin-top:12px">El modo pérdida aumenta la frecuencia de heartbeat. No activa cámara, micrófono, keylogger ni lectura de comunicaciones.</div>
-  </section>
+    <section class="panel">
+      <table>
+        <thead><tr><th>Activo</th><th>Equipo</th><th>Usuario</th><th>Sucursal</th><th>Plataforma</th><th>IP pública</th><th>Último contacto</th><th>Estado</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </section>
+
+    <section id="detail" class="panel detail">
+      <div style="display:flex;justify-content:space-between;gap:12px;align-items:center">
+        <div><h2 id="detailTitle">Equipo</h2><div id="detailSubtitle" class="muted"></div></div>
+        <button onclick="closeDetail()">Cerrar</button>
+      </div>
+      <div id="detailGrid" class="detail-grid"></div>
+      <div class="actions">
+        <button id="lostButton" class="danger" onclick="toggleLostMode()">Activar modo pérdida</button>
+        <button onclick="loadDevices()">Actualizar</button>
+      </div>
+      <div class="muted small" style="margin-top:12px">El modo pérdida aumenta la frecuencia de heartbeat. No activa cámara, micrófono, keylogger ni lectura de comunicaciones.</div>
+    </section>
+  </div>
 </main>
 
 <script>
 let devices=[];
 let selected=null;
+
 function esc(v){return String(v??'-').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-function adminToken(){return document.getElementById('token').value}
 function field(label,value){return '<div class="field"><span class="muted small">'+esc(label)+'</span><b>'+esc(value??'-')+'</b></div>'}
 
+async function api(url,options={}){
+  const response=await fetch(url,{credentials:'same-origin',...options});
+  if(response.status===401){
+    showLogin();
+    throw new Error('authentication required');
+  }
+  return response;
+}
+
+async function login(){
+  loginError.textContent='';
+  const response=await fetch('/api/v1/auth/login',{
+    method:'POST',
+    credentials:'same-origin',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({username:username.value.trim(),password:password.value})
+  });
+  if(!response.ok){
+    const body=await response.json().catch(()=>({detail:'No se pudo iniciar sesión'}));
+    loginError.textContent=body.detail||'No se pudo iniciar sesión';
+    return;
+  }
+  password.value='';
+  await initialize();
+}
+
+async function logout(){
+  await fetch('/api/v1/auth/logout',{method:'POST',credentials:'same-origin'});
+  devices=[]; selected=null; showLogin();
+}
+
+function showLogin(){
+  loginBox.style.display='block';
+  app.style.display='none';
+  sessionControls.style.display='none';
+}
+
+function showApp(usernameValue){
+  loginBox.style.display='none';
+  app.style.display='block';
+  sessionControls.style.display='flex';
+  sessionUser.textContent=usernameValue;
+}
+
+async function initialize(){
+  const me=await fetch('/api/v1/auth/me',{credentials:'same-origin'});
+  if(!me.ok){showLogin();return}
+  const identity=await me.json();
+  showApp(identity.username);
+  await loadDevices();
+}
+
 async function loadDevices(){
-  const token=adminToken();
-  sessionStorage.setItem('assetguard_admin',token);
-  const r=await fetch('/api/v1/devices',{headers:{'X-Admin-Token':token}});
-  if(!r.ok){alert('No autorizado');return}
+  const r=await api('/api/v1/devices');
+  if(!r.ok){alert('No se pudieron cargar los dispositivos');return}
   devices=await r.json();
   total.textContent=devices.length;
   online.textContent=devices.filter(x=>x.online).length;
@@ -78,7 +148,7 @@ async function loadDevices(){
   lost.textContent=devices.filter(x=>x.lost_mode).length;
   rows.innerHTML=devices.map(x=>'<tr onclick="openDetail(\''+x.id+'\')">'+
     '<td>'+esc(x.asset_tag||x.serial||'-')+'</td>'+
-    '<td>'+esc((x.manufacturer||'')+' '+(x.model||x.hostname))+'</td>'+
+    '<td>'+esc(((x.manufacturer||'')+' '+(x.model||x.hostname)).trim())+'</td>'+
     '<td>'+esc(x.username||'-')+'</td><td>'+esc(x.branch||'-')+'</td>'+
     '<td>'+esc(x.platform||'-')+'</td><td>'+esc(x.public_ip||'-')+'</td>'+
     '<td>'+new Date(x.last_seen).toLocaleString()+'</td>'+
@@ -102,7 +172,7 @@ function openDetail(id){
 function renderDetail(x){
   selected=x;
   detailTitle.textContent=x.asset_tag||x.hostname;
-  detailSubtitle.textContent=(x.manufacturer||'')+' '+(x.model||'')+' · '+(x.serial||'sin serial');
+  detailSubtitle.textContent=((x.manufacturer||'')+' '+(x.model||'')).trim()+' · '+(x.serial||'sin serial');
   detailGrid.innerHTML=
     field('Responsable',x.assigned_to)+field('Sucursal',x.branch)+field('Usuario',x.username)+field('Hostname',x.hostname)+
     field('Serial',x.serial)+field('UUID',x.hardware_uuid)+field('Sistema operativo',x.os_version)+field('Arquitectura',x.architecture)+
@@ -118,19 +188,17 @@ async function toggleLostMode(){
   const enable=!selected.lost_mode;
   const reason=prompt(enable?'Motivo para activar modo pérdida:':'Motivo para desactivar modo pérdida:');
   if(!reason||reason.trim().length<3)return;
-  const r=await fetch('/api/v1/devices/'+selected.id+'/lost-mode',{
+  const r=await api('/api/v1/devices/'+selected.id+'/lost-mode',{
     method:'POST',
-    headers:{'Content-Type':'application/json','X-Admin-Token':adminToken()},
+    headers:{'Content-Type':'application/json'},
     body:JSON.stringify({enabled:enable,reason:reason.trim()})
   });
   if(!r.ok){alert('No se pudo cambiar el modo pérdida');return}
   await loadDevices();
 }
 
-window.addEventListener('load',()=>{
-  const t=sessionStorage.getItem('assetguard_admin');
-  if(t){token.value=t;loadDevices()}
-});
+password.addEventListener('keydown',e=>{if(e.key==='Enter')login()});
+window.addEventListener('load',initialize);
 </script>
 </body>
 </html>
