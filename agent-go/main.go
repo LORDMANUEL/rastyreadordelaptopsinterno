@@ -138,7 +138,10 @@ func saveConfig(path string, cfg Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil { return err }
 	raw, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil { return err }
-	return os.WriteFile(path, raw, 0600)
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		return err
+	}
+	return secureConfigFile(path)
 }
 
 func enroll(cfg *Config) error {
