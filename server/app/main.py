@@ -371,6 +371,9 @@ def list_devices(_: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUP
             "tpm_status": d.tpm_status,
             "antivirus_status": d.antivirus_status,
             "lost_mode": d.lost_mode,
+            "auth_generation": d.auth_generation,
+            "auth_expires_at": d.auth_expires_at.isoformat() if d.auth_expires_at else None,
+            "auth_revoked_at": d.auth_revoked_at.isoformat() if d.auth_revoked_at else None,
             "last_seen": d.last_seen.isoformat(),
             "online": age <= OFFLINE_SECONDS,
         })
@@ -405,6 +408,9 @@ def get_device(device_id: str, _: SessionIdentity = Depends(require_roles(ROLE_A
         "tpm_status": device.tpm_status,
         "antivirus_status": device.antivirus_status,
         "lost_mode": device.lost_mode,
+        "auth_generation": device.auth_generation,
+        "auth_expires_at": device.auth_expires_at.isoformat() if device.auth_expires_at else None,
+        "auth_revoked_at": device.auth_revoked_at.isoformat() if device.auth_revoked_at else None,
         "created_at": device.created_at.isoformat(),
         "last_seen": device.last_seen.isoformat(),
     }
