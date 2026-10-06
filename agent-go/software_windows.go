@@ -29,7 +29,8 @@ foreach($target in $targets){
    }
   }
 }
-@($items | Sort-Object name,version,publisher,source -Unique) | ConvertTo-Json -Compress -Depth 3
+$result=@($items | Sort-Object name,version,publisher,source -Unique)
+ConvertTo-Json -InputObject $result -Compress -Depth 3
 `
 
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
