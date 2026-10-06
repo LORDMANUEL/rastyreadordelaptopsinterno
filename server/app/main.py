@@ -24,6 +24,7 @@ from .rbac import (
 from .auth_schemas import LoginRequest
 from .database import SessionLocal
 from .models import AuditEvent, Device, DeviceObservation
+from .network_geo import NetworkLocation, lookup_network_location, validate_geo_configuration
 from .user_models import UserAccount
 from .schemas import DeviceAuthRevoke, DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
 
@@ -44,6 +45,7 @@ def validate_configuration() -> None:
     missing = [name for name, value in required.items() if not value]
     if missing:
         raise RuntimeError("missing required configuration: " + ", ".join(missing))
+    validate_geo_configuration()
 
 
 @asynccontextmanager
@@ -90,6 +92,21 @@ def should_rotate_device_auth(device: Device, now: datetime | None = None) -> bo
         return True
     issued = as_utc(device.auth_issued_at)
     return current - issued >= timedelta(days=DEVICE_AUTH_ROTATE_DAYS)
+
+
+def apply_network_location(
+    device: Device,
+    location: NetworkLocation | None,
+    now: datetime | None = None,
+) -> None:
+    if location is None:
+        return
+    device.geo_country_code = location.country_code
+    device.geo_country_name = location.country_name
+    device.geo_region_name = location.region_name
+    device.geo_city_name = location.city_name
+    device.geo_accuracy_km = location.accuracy_km
+    device.geo_updated_at = now or datetime.now(timezone.utc)
 
 
 def require_identity(
