@@ -24,14 +24,17 @@ from .rbac import (
 from .auth_schemas import LoginRequest
 from .database import SessionLocal
 from .models import AuditEvent, Device, DeviceObservation
+from .enrollment_models import EnrollmentCode
 from .software_models import InstalledApplication
 from .network_geo import NetworkLocation, lookup_network_location, validate_geo_configuration
 from .user_models import UserAccount
 from .schemas import DeviceAuthRevoke, DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
+from .enrollment_schemas import EnrollmentCodeCreate, EnrollmentCodeRevoke
 from .software_schemas import SoftwareInventorySync
 
 APP_NAME = "YUDE Asset Guard"
 ENROLLMENT_TOKEN = os.getenv("ENROLLMENT_TOKEN", "")
+ALLOW_LEGACY_ENROLLMENT_TOKEN = os.getenv("ALLOW_LEGACY_ENROLLMENT_TOKEN", "false").lower() in {"1", "true", "yes", "on"}
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 HEARTBEAT_SECONDS = int(os.getenv("HEARTBEAT_SECONDS", "300"))
 OFFLINE_SECONDS = int(os.getenv("HEARTBEAT_OFFLINE_SECONDS", "600"))
@@ -41,9 +44,10 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 def validate_configuration() -> None:
     required = {
-        "ENROLLMENT_TOKEN": ENROLLMENT_TOKEN,
         "ADMIN_TOKEN": ADMIN_TOKEN,
     }
+    if ALLOW_LEGACY_ENROLLMENT_TOKEN:
+        required["ENROLLMENT_TOKEN"] = ENROLLMENT_TOKEN
     missing = [name for name, value in required.items() if not value]
     if missing:
         raise RuntimeError("missing required configuration: " + ", ".join(missing))
@@ -56,7 +60,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=APP_NAME, version="0.8.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.9.0", lifespan=lifespan)
 
 
 def db_session():
@@ -173,6 +177,39 @@ def software_app_key(name: str, version: str | None, publisher: str | None, sour
     return sha256(canonical)
 
 
+def consume_enrollment_code(
+    raw_value: str,
+    platform: str,
+    db: Session,
+) -> EnrollmentCode | None:
+    now = datetime.now(timezone.utc)
+    code = db.scalar(
+        select(EnrollmentCode).where(EnrollmentCode.code_hash == sha256(raw_value))
+    )
+    if code is not None:
+        if code.revoked_at is not None:
+            raise HTTPException(status_code=403, detail="enrollment code revoked")
+        if as_utc(code.expires_at) <= now:
+            raise HTTPException(status_code=403, detail="enrollment code expired")
+        if code.use_count >= code.max_uses:
+            raise HTTPException(status_code=403, detail="enrollment code exhausted")
+        if code.platform and code.platform.lower() != platform.lower():
+            raise HTTPException(status_code=403, detail="enrollment code platform mismatch")
+
+        code.use_count += 1
+        code.last_used_at = now
+        return code
+
+    if (
+        ALLOW_LEGACY_ENROLLMENT_TOKEN
+        and ENROLLMENT_TOKEN
+        and secrets.compare_digest(raw_value, ENROLLMENT_TOKEN)
+    ):
+        return None
+
+    raise HTTPException(status_code=403, detail="invalid enrollment code")
+
+
 @app.get("/health")
 def health():
     return {"status": "ok", "service": APP_NAME, "version": app.version}
@@ -232,8 +269,7 @@ def auth_me(identity: SessionIdentity = Depends(require_identity)):
 
 @app.post("/api/v1/enroll", response_model=EnrollResponse)
 def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_session)):
-    if not secrets.compare_digest(payload.enrollment_token, ENROLLMENT_TOKEN):
-        raise HTTPException(status_code=403, detail="invalid enrollment token")
+    enrollment_code = consume_enrollment_code(payload.enrollment_token, payload.platform, db)
 
     device = None
     if payload.hardware_uuid:
@@ -265,13 +301,18 @@ def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_se
     device.manufacturer = payload.manufacturer
     device.model = payload.model
     device.hardware_uuid = payload.hardware_uuid
+    if enrollment_code is not None and enrollment_code.branch:
+        device.branch = enrollment_code.branch
     now = datetime.now(timezone.utc)
     raw_token = issue_device_auth(device, now)
     device.public_ip = client_ip(request)
     apply_network_location(device, lookup_network_location(device.public_ip), now)
     device.last_seen = now
 
-    db.add(AuditEvent(event_type=event_type, device_id=device.id, detail=f"{device.platform}:{device.hostname}"))
+    enrollment_detail = f"{device.platform}:{device.hostname}"
+    if enrollment_code is not None:
+        enrollment_detail += f";enrollment_code={enrollment_code.id}"
+    db.add(AuditEvent(event_type=event_type, device_id=device.id, detail=enrollment_detail))
     db.add(DeviceObservation(
         device_id=device.id,
         reason=event_type,
