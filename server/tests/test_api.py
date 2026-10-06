@@ -1,8 +1,11 @@
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
+from app.database import SessionLocal
 from app.main import app
+from app.models import Device
 
 
 def test_enrollment_reenrollment_heartbeat_and_lost_mode():
@@ -104,3 +107,66 @@ def test_admin_token_required():
         assert response.status_code == 401
 
 
+
+
+def test_device_auth_rotation_and_revocation():
+    serial = "ROTATE-" + uuid4().hex[:10]
+    hardware_uuid = str(uuid4())
+
+    with TestClient(app) as client:
+        enrolled = client.post(
+            "/api/v1/enroll",
+            json={
+                "enrollment_token": "ci-enrollment-token",
+                "hostname": "YUDE-ROTATE-01",
+                "serial": serial,
+                "platform": "windows",
+                "hardware_uuid": hardware_uuid,
+            },
+        )
+        assert enrolled.status_code == 200, enrolled.text
+        data = enrolled.json()
+        original = data["device_token"]
+
+        with SessionLocal() as db:
+            device = db.get(Device, data["device_id"])
+            device.auth_issued_at = datetime.now(timezone.utc) - timedelta(days=8)
+            db.commit()
+
+        rotated = client.post(
+            "/api/v1/heartbeat",
+            headers={"Authorization": "Bearer " + original},
+            json={"username": "YUDE\\rotation-test"},
+        )
+        assert rotated.status_code == 200, rotated.text
+        replacement = rotated.json()["device_token"]
+        assert replacement
+        assert replacement != original
+
+        stale = client.post(
+            "/api/v1/heartbeat",
+            headers={"Authorization": "Bearer " + original},
+            json={"username": "stale"},
+        )
+        assert stale.status_code == 401
+
+        current = client.post(
+            "/api/v1/heartbeat",
+            headers={"Authorization": "Bearer " + replacement},
+            json={"username": "YUDE\\rotation-test"},
+        )
+        assert current.status_code == 200
+
+        revoke = client.post(
+            f"/api/v1/devices/{data['device_id']}/revoke-auth",
+            headers={"X-Admin-Token": "ci-admin-token"},
+            json={"reason": "credential lifecycle test"},
+        )
+        assert revoke.status_code == 200, revoke.text
+
+        revoked = client.post(
+            "/api/v1/heartbeat",
+            headers={"Authorization": "Bearer " + replacement},
+            json={"username": "revoked"},
+        )
+        assert revoked.status_code == 401
