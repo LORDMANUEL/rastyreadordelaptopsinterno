@@ -44,7 +44,9 @@ jobs:
           cols = {c["name"] for c in inspector.get_columns("devices")}
           required = {"wifi_ssid", "hardware_uuid", "bitlocker_status", "tpm_status", "antivirus_status"}
           assert required.issubset(cols), cols
-          assert "device_observations" in inspector.get_table_names()
+          tables = inspector.get_table_names()
+          assert "device_observations" in tables
+          assert "user_accounts" in tables
           assert app.title == "YUDE Asset Guard"
           print("FastAPI + migrations OK")
           PY
