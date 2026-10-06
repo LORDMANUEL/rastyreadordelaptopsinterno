@@ -22,6 +22,10 @@ class Device(Base):
     architecture: Mapped[str | None] = mapped_column(String(64), nullable=True)
     agent_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    auth_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    auth_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    auth_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    auth_generation: Mapped[int] = mapped_column(Integer, default=1)
 
     asset_tag: Mapped[str | None] = mapped_column(String(100), index=True, nullable=True)
     branch: Mapped[str | None] = mapped_column(String(100), nullable=True)
