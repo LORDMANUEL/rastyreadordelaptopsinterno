@@ -22,7 +22,7 @@ def add_account(username: str, role: str, active: bool = True) -> None:
 
 def session_headers(username: str, role: str) -> dict[str, str]:
     token = rbac.create_session(username, role)
-    return {"Cookie": "assetguard_session=" + token}
+    return {"Cookie": "assetguard_session=" + token, "X-Requested-With": "YudeAssetGuard"}
 
 
 def test_role_permissions(monkeypatch):
