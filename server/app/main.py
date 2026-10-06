@@ -258,6 +258,7 @@ def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_se
     now = datetime.now(timezone.utc)
     raw_token = issue_device_auth(device, now)
     device.public_ip = client_ip(request)
+    apply_network_location(device, lookup_network_location(device.public_ip), now)
     device.last_seen = now
 
     db.add(AuditEvent(event_type=event_type, device_id=device.id, detail=f"{device.platform}:{device.hostname}"))
@@ -265,6 +266,10 @@ def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_se
         device_id=device.id,
         reason=event_type,
         public_ip=device.public_ip,
+        geo_country_code=device.geo_country_code,
+        geo_region_name=device.geo_region_name,
+        geo_city_name=device.geo_city_name,
+        geo_accuracy_km=device.geo_accuracy_km,
     ))
     db.commit()
     return EnrollResponse(device_id=device.id, device_token=raw_token, heartbeat_seconds=HEARTBEAT_SECONDS)
@@ -307,7 +312,11 @@ def heartbeat(
             setattr(device, field, value)
 
     device.public_ip = new_public_ip
-    device.last_seen = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    public_ip_changed = previous["public_ip"] != device.public_ip
+    if public_ip_changed or device.geo_updated_at is None:
+        apply_network_location(device, lookup_network_location(device.public_ip), now)
+    device.last_seen = now
 
     network_changed = any((
         previous["lan_ip"] != device.lan_ip,
@@ -332,6 +341,10 @@ def heartbeat(
             lan_ip=device.lan_ip,
             public_ip=device.public_ip,
             wifi_ssid=device.wifi_ssid,
+            geo_country_code=device.geo_country_code,
+            geo_region_name=device.geo_region_name,
+            geo_city_name=device.geo_city_name,
+            geo_accuracy_km=device.geo_accuracy_km,
             battery_percent=device.battery_percent,
         ))
 
