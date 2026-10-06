@@ -30,12 +30,14 @@ from .models import AuditEvent, Device, DeviceObservation
 from .enrollment_models import EnrollmentCode
 from .software_models import InstalledApplication
 from .software_policy_models import DeviceSoftwareAssignment, SoftwareCatalogItem
+from .software_task_models import DeviceSoftwareTask
 from .network_geo import NetworkLocation, lookup_network_location, validate_geo_configuration
 from .user_models import UserAccount
 from .schemas import DeviceAuthRevoke, DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
 from .enrollment_schemas import EnrollmentCodeCreate, EnrollmentCodeRevoke
 from .software_schemas import SoftwareInventorySync
 from .software_policy_schemas import DeviceSoftwareAssignmentCreate, SoftwareCatalogCreate, SoftwareCatalogUpdate
+from .software_task_schemas import SoftwareTaskCreate, SoftwareTaskResult
 
 APP_NAME = "YUDE Asset Guard"
 ENROLLMENT_TOKEN = os.getenv("ENROLLMENT_TOKEN", "")
@@ -106,7 +108,7 @@ async def lifespan(_: FastAPI):
             await task
 
 
-app = FastAPI(title=APP_NAME, version="0.12.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.13.0", lifespan=lifespan)
 app.middleware("http")(guard_request)
 
 
@@ -770,6 +772,125 @@ def get_device_software_policy(
         })
 
     return output
+
+
+@app.post("/api/v1/devices/{device_id}/software-tasks")
+def create_software_task(
+    device_id: str,
+    payload: SoftwareTaskCreate,
+    identity: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT)),
+    db: Session = Depends(db_session),
+):
+    if db.get(Device, device_id) is None:
+        raise HTTPException(status_code=404, detail="device not found")
+    if db.get(SoftwareCatalogItem, payload.catalog_id) is None:
+        raise HTTPException(status_code=404, detail="software catalog item not found")
+
+    task = DeviceSoftwareTask(
+        device_id=device_id,
+        catalog_id=payload.catalog_id,
+        action=payload.action,
+        status="PENDING",
+        attempts=0,
+        created_by=identity.username,
+    )
+    db.add(task)
+    db.flush()
+    db.add(AuditEvent(
+        event_type="SOFTWARE_TASK_CREATED",
+        device_id=device_id,
+        actor=identity.username,
+        detail=f"task_id={task.id};catalog_id={task.catalog_id};action={task.action}",
+    ))
+    db.commit()
+    return {"id": task.id, "status": task.status}
+
+
+@app.get("/api/v1/devices/{device_id}/software-tasks")
+def list_device_software_tasks(
+    device_id: str,
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)),
+    db: Session = Depends(db_session),
+):
+    if db.get(Device, device_id) is None:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    tasks = db.scalars(
+        select(DeviceSoftwareTask)
+        .where(DeviceSoftwareTask.device_id == device_id)
+        .order_by(DeviceSoftwareTask.created_at.desc())
+    ).all()
+    return [{
+        "id": task.id,
+        "catalog_id": task.catalog_id,
+        "action": task.action,
+        "status": task.status,
+        "attempts": task.attempts,
+        "created_by": task.created_by,
+        "created_at": task.created_at.isoformat(),
+        "started_at": task.started_at.isoformat() if task.started_at else None,
+        "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+        "result_detail": task.result_detail,
+    } for task in tasks]
+
+
+@app.get("/api/v1/device-tasks/pending")
+def list_pending_device_tasks(
+    device: Device = Depends(device_from_auth),
+    db: Session = Depends(db_session),
+):
+    tasks = db.scalars(
+        select(DeviceSoftwareTask)
+        .where(
+            DeviceSoftwareTask.device_id == device.id,
+            DeviceSoftwareTask.status == "PENDING",
+        )
+        .order_by(DeviceSoftwareTask.created_at)
+        .limit(20)
+    ).all()
+
+    output = []
+    for task in tasks:
+        catalog = db.get(SoftwareCatalogItem, task.catalog_id)
+        if catalog is None:
+            continue
+        output.append({
+            "id": task.id,
+            "action": task.action,
+            "catalog_id": catalog.id,
+            "name": catalog.name,
+            "publisher": catalog.publisher,
+            "approved_version": catalog.approved_version,
+        })
+    return output
+
+
+@app.post("/api/v1/device-tasks/{task_id}/result")
+def complete_device_software_task(
+    task_id: str,
+    payload: SoftwareTaskResult,
+    device: Device = Depends(device_from_auth),
+    db: Session = Depends(db_session),
+):
+    task = db.get(DeviceSoftwareTask, task_id)
+    if task is None or task.device_id != device.id:
+        raise HTTPException(status_code=404, detail="task not found")
+    if task.status in {"SUCCEEDED", "FAILED"}:
+        raise HTTPException(status_code=409, detail="task already completed")
+
+    now = datetime.now(timezone.utc)
+    task.status = payload.status
+    task.completed_at = now
+    task.result_detail = payload.detail
+    task.attempts = max(1, task.attempts)
+    db.add(AuditEvent(
+        event_type="SOFTWARE_TASK_COMPLETED",
+        device_id=device.id,
+        actor="agent",
+        detail=f"task_id={task.id};status={task.status}",
+    ))
+    db.commit()
+    return {"ok": True, "status": task.status}
 
 
 @app.get("/api/v1/operations/summary")
