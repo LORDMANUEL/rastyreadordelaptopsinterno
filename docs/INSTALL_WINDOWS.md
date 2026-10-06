@@ -31,7 +31,7 @@ Get-Content .\SHA256SUMS.txt
 Abrir PowerShell como administrador desde la carpeta del artefacto:
 
 ```powershell
-.\install.ps1 -ServerUrl "https://assets.example.com" -EnrollmentToken "TOKEN_TEMPORAL"
+.\install.ps1 -ServerUrl "https://assets.example.com" -EnrollmentToken "CODIGO_TEMPORAL"
 ```
 
 El script:
@@ -44,7 +44,7 @@ El script:
 6. inicia el servicio;
 7. muestra su estado final.
 
-Después del enrolamiento correcto, el agente elimina el token temporal de enrolamiento y conserva únicamente su token individual.
+Después del enrolamiento correcto, el agente elimina el código temporal de enrolamiento y conserva únicamente su identidad técnica individual.
 
 ## Servicio
 
