@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.4.0"
+const agentVersion = "0.5.0"
 
 type Config struct {
 	ServerURL        string `json:"server_url"`
@@ -24,6 +24,7 @@ type Config struct {
 	DeviceID         string `json:"device_id,omitempty"`
 	DeviceToken      string `json:"device_token,omitempty"`
 	HeartbeatSeconds int    `json:"heartbeat_seconds,omitempty"`
+	SoftwareSyncAt   string `json:"software_sync_at,omitempty"`
 }
 
 type Inventory struct {
@@ -84,6 +85,24 @@ type HeartbeatResponse struct {
 	DeviceToken          string `json:"device_token,omitempty"`
 }
 
+type SoftwareItem struct {
+	Name      string `json:"name"`
+	Version   string `json:"version,omitempty"`
+	Publisher string `json:"publisher,omitempty"`
+	Source    string `json:"source,omitempty"`
+}
+
+type SoftwareInventoryRequest struct {
+	Applications []SoftwareItem `json:"applications"`
+}
+
+type SoftwareInventoryResponse struct {
+	OK      bool `json:"ok"`
+	Present int  `json:"present"`
+	Added   int  `json:"added"`
+	Removed int  `json:"removed"`
+}
+
 func main() {
 	handled, err := handlePlatformCommand(os.Args[1:])
 	if handled {
@@ -114,15 +133,26 @@ func agentLoop(ctx context.Context) error {
 
 	for {
 		next, rotated, err := heartbeat(&cfg)
+		dirtyConfig := rotated
 		if err != nil {
 			logLine("heartbeat error: %v", err)
 			next = 60
-		} else if rotated {
+		} else if softwareSyncDue(cfg) {
+			if err := syncSoftwareInventory(cfg); err != nil {
+				logLine("software inventory sync error: %v", err)
+			} else {
+				cfg.SoftwareSyncAt = time.Now().UTC().Format(time.RFC3339)
+				dirtyConfig = true
+			}
+		}
+
+		if dirtyConfig {
 			if err := saveConfig(cfgPath, cfg); err != nil {
-				logLine("cannot persist rotated device identity: %v", err)
+				logLine("cannot persist agent configuration: %v", err)
 				next = 60
 			}
 		}
+
 		if next < 30 {
 			next = 30
 		}
@@ -261,6 +291,39 @@ func heartbeat(cfg *Config) (int, bool, error) {
 		return cfg.HeartbeatSeconds, rotated, nil
 	}
 	return 300, rotated, nil
+}
+
+func softwareSyncDue(cfg Config) bool {
+	if cfg.SoftwareSyncAt == "" {
+		return true
+	}
+	last, err := time.Parse(time.RFC3339, cfg.SoftwareSyncAt)
+	if err != nil {
+		return true
+	}
+	return time.Since(last) >= 24*time.Hour
+}
+
+func syncSoftwareInventory(cfg Config) error {
+	apps, err := collectSoftwareInventory()
+	if err != nil {
+		return err
+	}
+
+	var out SoftwareInventoryResponse
+	if err := postJSON(
+		cfg.ServerURL+"/api/v1/software-inventory",
+		cfg.DeviceToken,
+		SoftwareInventoryRequest{Applications: apps},
+		&out,
+	); err != nil {
+		return err
+	}
+	if !out.OK {
+		return errors.New("server did not acknowledge software inventory")
+	}
+	logLine("software inventory synced: present=%d added=%d removed=%d", out.Present, out.Added, out.Removed)
+	return nil
 }
 
 func postJSON(url, bearer string, payload any, out any) error {
