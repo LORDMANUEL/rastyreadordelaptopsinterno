@@ -76,6 +76,7 @@
         <button onclick="loadHistory()">Historial</button>
         <button onclick="loadSoftware()">Aplicaciones</button>
         <button onclick="loadSoftwarePolicy()">Política software</button>
+        <button onclick="loadSoftwareTasks()">Tareas software</button>
         <button onclick="loadDevices()">Actualizar</button>
       </div>
       <div id="historyBox" style="display:none;margin-top:16px;overflow:auto">
@@ -94,6 +95,12 @@
         <table>
           <thead><tr><th>Aplicación</th><th>Deseado</th><th>Versión aprobada</th><th>Versiones instaladas</th><th>Estado</th></tr></thead>
           <tbody id="policyRows"></tbody>
+        </table>
+      </div>
+      <div id="taskBox" style="display:none;margin-top:16px;overflow:auto">
+        <table>
+          <thead><tr><th>Creada</th><th>Acción</th><th>Estado</th><th>Intentos</th><th>Creada por</th><th>Resultado</th></tr></thead>
+          <tbody id="taskRows"></tbody>
         </table>
       </div>
       <div class="muted small" style="margin-top:12px">El modo pérdida aumenta la frecuencia de heartbeat. No activa cámara, micrófono, keylogger ni lectura de comunicaciones.</div>
@@ -269,6 +276,25 @@ async function loadSoftwarePolicy(){
   policyBox.style.display='block';
 }
 
+async function loadSoftwareTasks(){
+  if(!selected)return;
+  const r=await api('/api/v1/devices/'+selected.id+'/software-tasks');
+  if(!r.ok){alert('No se pudieron cargar las tareas de software');return}
+  const data=await r.json();
+  taskRows.innerHTML=data.map(x=>'<tr>'+
+    '<td>'+new Date(x.created_at).toLocaleString()+'</td>'+
+    '<td>'+esc(x.action)+'</td>'+
+    '<td class="'+(x.status==='SUCCEEDED'?'online':(x.status==='FAILED'?'lost':'offline'))+'">'+esc(x.status)+'</td>'+
+    '<td>'+esc(x.attempts)+'</td>'+
+    '<td>'+esc(x.created_by)+'</td>'+
+    '<td>'+esc(x.result_detail||'-')+'</td>'+
+  '</tr>').join('');
+  if(data.length===0){
+    taskRows.innerHTML='<tr><td colspan="6" class="muted">Sin tareas registradas.</td></tr>';
+  }
+  taskBox.style.display='block';
+}
+
 function closeDetail(){
   detail.classList.remove('open');
   historyBox.style.display='none';
@@ -277,6 +303,8 @@ function closeDetail(){
   softwareRows.innerHTML='';
   policyBox.style.display='none';
   policyRows.innerHTML='';
+  taskBox.style.display='none';
+  taskRows.innerHTML='';
   selected=null;
 }
 
