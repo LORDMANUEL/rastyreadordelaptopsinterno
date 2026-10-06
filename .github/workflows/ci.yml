@@ -64,6 +64,8 @@ jobs:
           assert "user_accounts" in tables
           assert "installed_applications" in tables
           assert "enrollment_codes" in tables
+          assert "software_catalog" in tables
+          assert "device_software_assignments" in tables
           assert app.title == "YUDE Asset Guard"
           print("FastAPI + migrations OK")
           PY
