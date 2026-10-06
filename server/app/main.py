@@ -10,19 +10,21 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .auth import (
-    ADMIN_PASSWORD_HASH,
-    ADMIN_PASSWORD_SALT,
-    ADMIN_USERNAME,
+from .rbac import (
+    ROLE_ADMIN,
+    ROLE_AUDIT,
+    ROLE_SUPPORT,
     SESSION_SECRET,
     SESSION_TTL_SECONDS,
+    SessionIdentity,
     create_session,
     parse_session,
-    verify_admin_credentials,
+    verify_auth_value,
 )
 from .auth_schemas import LoginRequest
 from .database import SessionLocal
 from .models import AuditEvent, Device, DeviceObservation
+from .user_models import UserAccount
 from .schemas import DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
 
 APP_NAME = "YUDE Asset Guard"
@@ -36,6 +38,7 @@ def validate_configuration() -> None:
     required = {
         "ENROLLMENT_TOKEN": ENROLLMENT_TOKEN,
         "ADMIN_TOKEN": ADMIN_TOKEN,
+        "SESSION_SECRET": SESSION_SECRET,
     }
     missing = [name for name, value in required.items() if not value]
     if missing:
@@ -48,7 +51,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=APP_NAME, version="0.4.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.5.0", lifespan=lifespan)
 
 
 def db_session():
@@ -69,20 +72,32 @@ def as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def require_admin(
+def require_identity(
     request: Request,
     x_admin_token: str = Header(default=""),
     assetguard_session: str | None = Cookie(default=None),
-) -> str:
+    db: Session = Depends(db_session),
+) -> SessionIdentity:
     if x_admin_token and secrets.compare_digest(x_admin_token, ADMIN_TOKEN):
-        return "automation"
+        return SessionIdentity(username="automation", role=ROLE_ADMIN)
 
     if assetguard_session:
         identity = parse_session(assetguard_session)
         if identity is not None:
-            return identity.username
+            account = db.scalar(select(UserAccount).where(UserAccount.username == identity.username))
+            if account is not None and account.is_active and account.role == identity.role:
+                return identity
 
     raise HTTPException(status_code=401, detail="authentication required")
+
+
+def require_roles(*allowed_roles: str):
+    def dependency(identity: SessionIdentity = Depends(require_identity)) -> SessionIdentity:
+        if identity.role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="insufficient permissions")
+        return identity
+
+    return dependency
 
 
 def device_from_auth(
@@ -115,22 +130,30 @@ def dashboard():
 
 
 @app.post("/api/v1/auth/login")
-def login(payload: LoginRequest, response: Response):
-    if not all((ADMIN_USERNAME, ADMIN_PASSWORD_SALT, ADMIN_PASSWORD_HASH, SESSION_SECRET)):
-        raise HTTPException(status_code=503, detail="web authentication is not configured")
-    if not verify_admin_credentials(payload.username, payload.password):
+def login(payload: LoginRequest, response: Response, db: Session = Depends(db_session)):
+    account = db.scalar(select(UserAccount).where(UserAccount.username == payload.username))
+    if (
+        account is None
+        or not account.is_active
+        or not verify_auth_value(payload.password, account.auth_salt, account.auth_digest)
+    ):
         raise HTTPException(status_code=401, detail="invalid credentials")
+
+    account.last_login = datetime.now(timezone.utc)
+    account.updated_at = datetime.now(timezone.utc)
+    db.add(AuditEvent(event_type="USER_LOGIN", actor=account.username, detail=account.role))
+    db.commit()
 
     response.set_cookie(
         key="assetguard_session",
-        value=create_session(payload.username),
+        value=create_session(account.username, account.role),
         httponly=True,
         secure=True,
         samesite="strict",
         path="/",
         max_age=SESSION_TTL_SECONDS,
     )
-    return {"ok": True, "username": payload.username}
+    return {"ok": True, "username": account.username, "role": account.role}
 
 
 @app.post("/api/v1/auth/logout")
@@ -146,8 +169,8 @@ def logout(response: Response):
 
 
 @app.get("/api/v1/auth/me")
-def auth_me(actor: str = Depends(require_admin)):
-    return {"authenticated": True, "username": actor}
+def auth_me(identity: SessionIdentity = Depends(require_identity)):
+    return {"authenticated": True, "username": identity.username, "role": identity.role}
 
 
 @app.post("/api/v1/enroll", response_model=EnrollResponse)
@@ -277,7 +300,7 @@ def heartbeat(
 
 
 @app.get("/api/v1/devices")
-def list_devices(_: str = Depends(require_admin), db: Session = Depends(db_session)):
+def list_devices(_: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)), db: Session = Depends(db_session)):
     now = datetime.now(timezone.utc)
     devices = db.scalars(select(Device).order_by(Device.last_seen.desc())).all()
     output = []
@@ -313,7 +336,7 @@ def list_devices(_: str = Depends(require_admin), db: Session = Depends(db_sessi
 
 
 @app.get("/api/v1/devices/{device_id}")
-def get_device(device_id: str, _: str = Depends(require_admin), db: Session = Depends(db_session)):
+def get_device(device_id: str, _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)), db: Session = Depends(db_session)):
     device = db.get(Device, device_id)
     if device is None:
         raise HTTPException(status_code=404, detail="device not found")
@@ -348,7 +371,7 @@ def get_device(device_id: str, _: str = Depends(require_admin), db: Session = De
 @app.get("/api/v1/devices/{device_id}/history")
 def device_history(
     device_id: str,
-    _: str = Depends(require_admin),
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)),
     db: Session = Depends(db_session),
 ):
     device = db.get(Device, device_id)
@@ -378,7 +401,7 @@ def device_history(
 def update_device(
     device_id: str,
     payload: DeviceUpdate,
-    actor: str = Depends(require_admin),
+    identity: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT)),
     db: Session = Depends(db_session),
 ):
     device = db.get(Device, device_id)
@@ -387,7 +410,7 @@ def update_device(
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(device, field, value)
-    db.add(AuditEvent(event_type="DEVICE_UPDATED", device_id=device.id, actor=actor, detail=str(changes)))
+    db.add(AuditEvent(event_type="DEVICE_UPDATED", device_id=device.id, actor=identity.username, detail=str(changes)))
     db.commit()
     return {"ok": True}
 
@@ -396,7 +419,7 @@ def update_device(
 def set_lost_mode(
     device_id: str,
     payload: LostModeUpdate,
-    actor: str = Depends(require_admin),
+    identity: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT)),
     db: Session = Depends(db_session),
 ):
     device = db.get(Device, device_id)
@@ -406,7 +429,7 @@ def set_lost_mode(
     db.add(AuditEvent(
         event_type="LOST_MODE_ENABLED" if payload.enabled else "LOST_MODE_DISABLED",
         device_id=device.id,
-        actor=actor,
+        actor=identity.username,
         detail=payload.reason,
     ))
     db.commit()
@@ -414,7 +437,7 @@ def set_lost_mode(
 
 
 @app.get("/api/v1/audit")
-def audit(_: str = Depends(require_admin), db: Session = Depends(db_session)):
+def audit(_: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_AUDIT)), db: Session = Depends(db_session)):
     events = db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(200)).all()
     return [{
         "id": e.id,
