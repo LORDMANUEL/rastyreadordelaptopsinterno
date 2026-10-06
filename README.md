@@ -45,4 +45,16 @@ La configuración se realiza mediante variables de entorno. Copie `.env.example`
 
 ## Estado
 
-Versión inicial en construcción.
+MVP técnico funcional con backend, agente Windows, Android, panel web, historial y CI.
+
+El proyecto aún no debe considerarse producción final. Los bloqueantes restantes y el criterio de aceptación están documentados en:
+
+- `docs/PROJECT_COMPLETION.md`
+- `docs/DEPLOY_DEBIAN.md`
+- `docs/AUTHENTICATION.md`
+- `docs/ANDROID_MDM.md`
+
+Estado estimado actual:
+
+- MVP técnico: ~70%.
+- Producción empresarial: ~45-50%.
