@@ -204,7 +204,8 @@ function renderDetail(x){
     field('Batería',x.battery_percent==null?'-':x.battery_percent+'%')+
     field('BitLocker',x.bitlocker_status)+field('TPM',x.tpm_status)+field('Antivirus',x.antivirus_status)+field('Agente',x.agent_version)+
     field('Generación identidad',x.auth_generation)+field('Expira identidad',x.auth_expires_at?new Date(x.auth_expires_at).toLocaleString():'-')+
-    field('Revocada',x.auth_revoked_at?new Date(x.auth_revoked_at).toLocaleString():'NO');
+    field('Revocada',x.auth_revoked_at?new Date(x.auth_revoked_at).toLocaleString():'NO')+
+    field('Offline desde',x.offline_since?new Date(x.offline_since).toLocaleString():'-');
   lostButton.textContent=x.lost_mode?'Desactivar modo pérdida':'Activar modo pérdida';
   lostButton.style.display=currentRole==='AUDITORIA'?'none':'inline-block';
   revokeAuthButton.style.display=currentRole==='ADMINISTRADOR'?'inline-block':'none';
