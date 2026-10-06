@@ -578,6 +578,39 @@ def get_software_inventory(
     } for item in items]
 
 
+@app.get("/api/v1/operations/summary")
+def operations_summary(
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)),
+    db: Session = Depends(db_session),
+):
+    now = datetime.now(timezone.utc)
+    devices = db.scalars(select(Device)).all()
+    online = 0
+    offline = 0
+    lost = 0
+    by_platform: dict[str, int] = {}
+
+    for device in devices:
+        age = max(0, int((now - as_utc(device.last_seen)).total_seconds()))
+        if age <= OFFLINE_SECONDS:
+            online += 1
+        else:
+            offline += 1
+        if device.lost_mode:
+            lost += 1
+        platform = device.platform or "unknown"
+        by_platform[platform] = by_platform.get(platform, 0) + 1
+
+    return {
+        "total": len(devices),
+        "online": online,
+        "offline": offline,
+        "lost_mode": lost,
+        "by_platform": by_platform,
+        "generated_at": now.isoformat(),
+    }
+
+
 @app.get("/api/v1/devices")
 def list_devices(_: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)), db: Session = Depends(db_session)):
     now = datetime.now(timezone.utc)
@@ -617,6 +650,7 @@ def list_devices(_: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUP
             "auth_generation": d.auth_generation,
             "auth_expires_at": d.auth_expires_at.isoformat() if d.auth_expires_at else None,
             "auth_revoked_at": d.auth_revoked_at.isoformat() if d.auth_revoked_at else None,
+            "offline_since": d.offline_since.isoformat() if d.offline_since else None,
             "last_seen": d.last_seen.isoformat(),
             "online": age <= OFFLINE_SECONDS,
         })
@@ -660,6 +694,7 @@ def get_device(device_id: str, _: SessionIdentity = Depends(require_roles(ROLE_A
         "auth_generation": device.auth_generation,
         "auth_expires_at": device.auth_expires_at.isoformat() if device.auth_expires_at else None,
         "auth_revoked_at": device.auth_revoked_at.isoformat() if device.auth_revoked_at else None,
+        "offline_since": device.offline_since.isoformat() if device.offline_since else None,
         "created_at": device.created_at.isoformat(),
         "last_seen": device.last_seen.isoformat(),
     }
