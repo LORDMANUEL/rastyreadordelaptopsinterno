@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -39,8 +39,6 @@ class Device(Base):
     geo_country_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     geo_region_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     geo_city_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
-    geo_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
-    geo_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     geo_accuracy_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
     geo_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -81,8 +79,6 @@ class DeviceObservation(Base):
     geo_country_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
     geo_region_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
     geo_city_name: Mapped[str | None] = mapped_column(String(160), nullable=True)
-    geo_latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
-    geo_longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     geo_accuracy_km: Mapped[int | None] = mapped_column(Integer, nullable=True)
     battery_percent: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
