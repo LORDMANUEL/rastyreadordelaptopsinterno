@@ -78,7 +78,7 @@
       </div>
       <div id="historyBox" style="display:none;margin-top:16px;overflow:auto">
         <table>
-          <thead><tr><th>Fecha</th><th>Evento</th><th>Usuario</th><th>SSID</th><th>IP LAN</th><th>IP pública</th><th>Batería</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Evento</th><th>Usuario</th><th>SSID</th><th>IP LAN</th><th>IP pública</th><th>Zona aprox.</th><th>Batería</th></tr></thead>
           <tbody id="historyRows"></tbody>
         </table>
       </div>
@@ -186,7 +186,10 @@ function renderDetail(x){
   detailGrid.innerHTML=
     field('Responsable',x.assigned_to)+field('Sucursal',x.branch)+field('Usuario',x.username)+field('Hostname',x.hostname)+
     field('Serial',x.serial)+field('UUID',x.hardware_uuid)+field('Sistema operativo',x.os_version)+field('Arquitectura',x.architecture)+
-    field('IP LAN',x.lan_ip)+field('IP pública',x.public_ip)+field('Wi-Fi / SSID',x.wifi_ssid)+field('Batería',x.battery_percent==null?'-':x.battery_percent+'%')+
+    field('IP LAN',x.lan_ip)+field('IP pública',x.public_ip)+field('Wi-Fi / SSID',x.wifi_ssid)+
+    field('Ubicación red', [x.geo_city_name,x.geo_region_name,x.geo_country_name].filter(Boolean).join(', ')||'-')+
+    field('Precisión aprox.',x.geo_accuracy_km==null?'-':'± '+x.geo_accuracy_km+' km')+
+    field('Batería',x.battery_percent==null?'-':x.battery_percent+'%')+
     field('BitLocker',x.bitlocker_status)+field('TPM',x.tpm_status)+field('Antivirus',x.antivirus_status)+field('Agente',x.agent_version)+
     field('Generación identidad',x.auth_generation)+field('Expira identidad',x.auth_expires_at?new Date(x.auth_expires_at).toLocaleString():'-')+
     field('Revocada',x.auth_revoked_at?new Date(x.auth_revoked_at).toLocaleString():'NO');
@@ -207,6 +210,7 @@ async function loadHistory(){
     '<td>'+esc(x.wifi_ssid||'-')+'</td>'+
     '<td>'+esc(x.lan_ip||'-')+'</td>'+
     '<td>'+esc(x.public_ip||'-')+'</td>'+
+    '<td>'+esc([x.geo_city_name,x.geo_region_name,x.geo_country_code].filter(Boolean).join(', ')||'-')+'</td>'+
     '<td>'+esc(x.battery_percent==null?'-':x.battery_percent+'%')+'</td>'+
   '</tr>').join('');
   historyBox.style.display='block';
