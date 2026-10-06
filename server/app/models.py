@@ -25,7 +25,7 @@ class Device(Base):
     auth_issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     auth_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     auth_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    auth_generation: Mapped[int] = mapped_column(Integer, default=1)
+    auth_generation: Mapped[int] = mapped_column(Integer, default=0)
 
     asset_tag: Mapped[str | None] = mapped_column(String(100), index=True, nullable=True)
     branch: Mapped[str | None] = mapped_column(String(100), nullable=True)
