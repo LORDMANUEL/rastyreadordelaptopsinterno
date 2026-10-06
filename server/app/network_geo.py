@@ -20,8 +20,6 @@ class NetworkLocation:
     country_name: str | None
     region_name: str | None
     city_name: str | None
-    latitude: float | None
-    longitude: float | None
     accuracy_km: int | None
 
 
@@ -66,7 +64,5 @@ def lookup_network_location(value: str | None) -> NetworkLocation | None:
         country_name=response.country.name,
         region_name=subdivision.name,
         city_name=response.city.name,
-        latitude=response.location.latitude,
-        longitude=response.location.longitude,
         accuracy_km=response.location.accuracy_radius,
     )
