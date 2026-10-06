@@ -59,13 +59,52 @@ def validate_configuration() -> None:
     validate_geo_configuration()
 
 
+def scan_offline_devices(db: Session, now: datetime | None = None) -> int:
+    current = now or datetime.now(timezone.utc)
+    marked = 0
+    devices = db.scalars(
+        select(Device).where(Device.offline_since.is_(None))
+    ).all()
+    for device in devices:
+        age = current - as_utc(device.last_seen)
+        if age.total_seconds() <= OFFLINE_SECONDS:
+            continue
+        device.offline_since = current
+        db.add(AuditEvent(
+            event_type="DEVICE_OFFLINE",
+            device_id=device.id,
+            actor="system",
+            detail=f"last_seen={as_utc(device.last_seen).isoformat()}",
+        ))
+        marked += 1
+    if marked:
+        db.commit()
+    return marked
+
+
+async def offline_monitor_loop() -> None:
+    while True:
+        try:
+            with SessionLocal() as db:
+                scan_offline_devices(db)
+        except Exception:
+            LOGGER.exception("offline monitor failed")
+        await asyncio.sleep(max(15, OFFLINE_MONITOR_SECONDS))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     validate_configuration()
-    yield
+    task = asyncio.create_task(offline_monitor_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
-app = FastAPI(title=APP_NAME, version="0.10.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.11.0", lifespan=lifespan)
 app.middleware("http")(guard_request)
 
 
