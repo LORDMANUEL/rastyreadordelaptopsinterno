@@ -24,9 +24,11 @@ from .rbac import (
 from .auth_schemas import LoginRequest
 from .database import SessionLocal
 from .models import AuditEvent, Device, DeviceObservation
+from .software_models import InstalledApplication
 from .network_geo import NetworkLocation, lookup_network_location, validate_geo_configuration
 from .user_models import UserAccount
 from .schemas import DeviceAuthRevoke, DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
+from .software_schemas import SoftwareInventorySync
 
 APP_NAME = "YUDE Asset Guard"
 ENROLLMENT_TOKEN = os.getenv("ENROLLMENT_TOKEN", "")
@@ -54,7 +56,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=APP_NAME, version="0.7.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.8.0", lifespan=lifespan)
 
 
 def db_session():
@@ -161,6 +163,14 @@ def client_ip(request: Request) -> str | None:
     # Uvicorn's trusted proxy middleware normalizes request.client.
     # Do not trust a raw X-Forwarded-For header from arbitrary clients here.
     return request.client.host if request.client else None
+
+
+def software_app_key(name: str, version: str | None, publisher: str | None, source: str | None) -> str:
+    canonical = "|".join(
+        (value or "").strip().lower()
+        for value in (name, version, publisher, source)
+    )
+    return sha256(canonical)
 
 
 @app.get("/health")
@@ -369,6 +379,95 @@ def heartbeat(
         "device_token": rotated_token,
         "auth_expires_at": device.auth_expires_at.isoformat() if device.auth_expires_at else None,
     }
+
+
+@app.post("/api/v1/software-inventory")
+def sync_software_inventory(
+    payload: SoftwareInventorySync,
+    device: Device = Depends(device_from_auth),
+    db: Session = Depends(db_session),
+):
+    now = datetime.now(timezone.utc)
+    existing = db.scalars(
+        select(InstalledApplication).where(InstalledApplication.device_id == device.id)
+    ).all()
+    by_key = {item.app_key: item for item in existing}
+    seen: set[str] = set()
+    added = 0
+
+    for app_item in payload.applications:
+        key = software_app_key(
+            app_item.name,
+            app_item.version,
+            app_item.publisher,
+            app_item.source,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+
+        item = by_key.get(key)
+        if item is None:
+            item = InstalledApplication(
+                device_id=device.id,
+                app_key=key,
+                name=app_item.name.strip(),
+                version=(app_item.version or "").strip() or None,
+                publisher=(app_item.publisher or "").strip() or None,
+                source=(app_item.source or "").strip() or None,
+                is_present=True,
+                first_seen=now,
+                last_seen=now,
+            )
+            db.add(item)
+            added += 1
+        else:
+            item.is_present = True
+            item.last_seen = now
+
+    removed = 0
+    for item in existing:
+        if item.app_key not in seen and item.is_present:
+            item.is_present = False
+            item.last_seen = now
+            removed += 1
+
+    db.add(AuditEvent(
+        event_type="SOFTWARE_INVENTORY_SYNC",
+        device_id=device.id,
+        actor="agent",
+        detail=f"present={len(seen)};added={added};removed={removed}",
+    ))
+    db.commit()
+    return {"ok": True, "present": len(seen), "added": added, "removed": removed}
+
+
+@app.get("/api/v1/devices/{device_id}/software")
+def get_software_inventory(
+    device_id: str,
+    include_absent: bool = False,
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)),
+    db: Session = Depends(db_session),
+):
+    device = db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    query = select(InstalledApplication).where(InstalledApplication.device_id == device_id)
+    if not include_absent:
+        query = query.where(InstalledApplication.is_present.is_(True))
+
+    items = db.scalars(query.order_by(InstalledApplication.name, InstalledApplication.version)).all()
+    return [{
+        "id": item.id,
+        "name": item.name,
+        "version": item.version,
+        "publisher": item.publisher,
+        "source": item.source,
+        "is_present": item.is_present,
+        "first_seen": item.first_seen.isoformat(),
+        "last_seen": item.last_seen.isoformat(),
+    } for item in items]
 
 
 @app.get("/api/v1/devices")
