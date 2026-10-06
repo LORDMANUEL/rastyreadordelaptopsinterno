@@ -72,6 +72,7 @@
       <div id="detailGrid" class="detail-grid"></div>
       <div class="actions">
         <button id="lostButton" class="danger" onclick="toggleLostMode()">Activar modo pérdida</button>
+        <button id="revokeAuthButton" class="danger" onclick="revokeDeviceAuth()">Revocar identidad agente</button>
         <button onclick="loadHistory()">Historial</button>
         <button onclick="loadDevices()">Actualizar</button>
       </div>
@@ -186,9 +187,12 @@ function renderDetail(x){
     field('Responsable',x.assigned_to)+field('Sucursal',x.branch)+field('Usuario',x.username)+field('Hostname',x.hostname)+
     field('Serial',x.serial)+field('UUID',x.hardware_uuid)+field('Sistema operativo',x.os_version)+field('Arquitectura',x.architecture)+
     field('IP LAN',x.lan_ip)+field('IP pública',x.public_ip)+field('Wi-Fi / SSID',x.wifi_ssid)+field('Batería',x.battery_percent==null?'-':x.battery_percent+'%')+
-    field('BitLocker',x.bitlocker_status)+field('TPM',x.tpm_status)+field('Antivirus',x.antivirus_status)+field('Agente',x.agent_version);
+    field('BitLocker',x.bitlocker_status)+field('TPM',x.tpm_status)+field('Antivirus',x.antivirus_status)+field('Agente',x.agent_version)+
+    field('Generación identidad',x.auth_generation)+field('Expira identidad',x.auth_expires_at?new Date(x.auth_expires_at).toLocaleString():'-')+
+    field('Revocada',x.auth_revoked_at?new Date(x.auth_revoked_at).toLocaleString():'NO');
   lostButton.textContent=x.lost_mode?'Desactivar modo pérdida':'Activar modo pérdida';
   lostButton.style.display=currentRole==='AUDITORIA'?'none':'inline-block';
+  revokeAuthButton.style.display=currentRole==='ADMINISTRADOR'?'inline-block':'none';
 }
 
 async function loadHistory(){
@@ -213,6 +217,19 @@ function closeDetail(){
   historyBox.style.display='none';
   historyRows.innerHTML='';
   selected=null;
+}
+
+async function revokeDeviceAuth(){
+  if(!selected||currentRole!=='ADMINISTRADOR')return;
+  const reason=prompt('Motivo para revocar la identidad técnica del agente:');
+  if(!reason||reason.trim().length<3)return;
+  const r=await api('/api/v1/devices/'+selected.id+'/revoke-auth',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({reason:reason.trim()})
+  });
+  if(!r.ok){alert('No se pudo revocar la identidad del agente');return}
+  await loadDevices();
 }
 
 async function toggleLostMode(){
