@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.3.1"
+const agentVersion = "0.4.0"
 
 type Config struct {
 	ServerURL        string `json:"server_url"`
@@ -78,9 +78,10 @@ type HeartbeatRequest struct {
 }
 
 type HeartbeatResponse struct {
-	OK                   bool `json:"ok"`
-	LostMode             bool `json:"lost_mode"`
-	NextHeartbeatSeconds int  `json:"next_heartbeat_seconds"`
+	OK                   bool   `json:"ok"`
+	LostMode             bool   `json:"lost_mode"`
+	NextHeartbeatSeconds int    `json:"next_heartbeat_seconds"`
+	DeviceToken          string `json:"device_token,omitempty"`
 }
 
 func main() {
@@ -112,10 +113,15 @@ func agentLoop(ctx context.Context) error {
 	}
 
 	for {
-		next, err := heartbeat(cfg)
+		next, rotated, err := heartbeat(&cfg)
 		if err != nil {
 			logLine("heartbeat error: %v", err)
 			next = 60
+		} else if rotated {
+			if err := saveConfig(cfgPath, cfg); err != nil {
+				logLine("cannot persist rotated device identity: %v", err)
+				next = 60
+			}
 		}
 		if next < 30 {
 			next = 30
@@ -217,7 +223,7 @@ func enroll(cfg *Config) error {
 	return nil
 }
 
-func heartbeat(cfg Config) (int, error) {
+func heartbeat(cfg *Config) (int, bool, error) {
 	host, _ := os.Hostname()
 	inv := collectInventory()
 	payload := HeartbeatRequest{
@@ -239,15 +245,22 @@ func heartbeat(cfg Config) (int, error) {
 	}
 	var out HeartbeatResponse
 	if err := postJSON(cfg.ServerURL+"/api/v1/heartbeat", cfg.DeviceToken, payload, &out); err != nil {
-		return 0, err
+		return 0, false, err
 	}
+
+	rotated := false
+	if out.DeviceToken != "" && out.DeviceToken != cfg.DeviceToken {
+		cfg.DeviceToken = out.DeviceToken
+		rotated = true
+	}
+
 	if out.NextHeartbeatSeconds > 0 {
-		return out.NextHeartbeatSeconds, nil
+		return out.NextHeartbeatSeconds, rotated, nil
 	}
 	if cfg.HeartbeatSeconds > 0 {
-		return cfg.HeartbeatSeconds, nil
+		return cfg.HeartbeatSeconds, rotated, nil
 	}
-	return 300, nil
+	return 300, rotated, nil
 }
 
 func postJSON(url, bearer string, payload any, out any) error {
