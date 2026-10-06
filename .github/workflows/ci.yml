@@ -45,7 +45,17 @@ jobs:
           validate_configuration()
           inspector = inspect(engine)
           cols = {c["name"] for c in inspector.get_columns("devices")}
-          required = {"wifi_ssid", "hardware_uuid", "bitlocker_status", "tpm_status", "antivirus_status"}
+          required = {
+              "wifi_ssid",
+              "hardware_uuid",
+              "bitlocker_status",
+              "tpm_status",
+              "antivirus_status",
+              "geo_country_code",
+              "geo_region_name",
+              "geo_city_name",
+              "geo_accuracy_km",
+          }
           assert required.issubset(cols), cols
           tables = inspector.get_table_names()
           assert "device_observations" in tables
