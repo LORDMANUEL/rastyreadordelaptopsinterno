@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from .rbac import (
@@ -22,7 +22,8 @@ from .rbac import (
     verify_auth_value,
 )
 from .auth_schemas import LoginRequest
-from .database import SessionLocal
+from .database import SessionLocal, engine
+from .http_security import guard_request
 from .models import AuditEvent, Device, DeviceObservation
 from .enrollment_models import EnrollmentCode
 from .software_models import InstalledApplication
