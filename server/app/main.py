@@ -29,11 +29,13 @@ from .http_security import guard_request
 from .models import AuditEvent, Device, DeviceObservation
 from .enrollment_models import EnrollmentCode
 from .software_models import InstalledApplication
+from .software_policy_models import DeviceSoftwareAssignment, SoftwareCatalogItem
 from .network_geo import NetworkLocation, lookup_network_location, validate_geo_configuration
 from .user_models import UserAccount
 from .schemas import DeviceAuthRevoke, DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
 from .enrollment_schemas import EnrollmentCodeCreate, EnrollmentCodeRevoke
 from .software_schemas import SoftwareInventorySync
+from .software_policy_schemas import DeviceSoftwareAssignmentCreate, SoftwareCatalogCreate, SoftwareCatalogUpdate
 
 APP_NAME = "YUDE Asset Guard"
 ENROLLMENT_TOKEN = os.getenv("ENROLLMENT_TOKEN", "")
@@ -104,7 +106,7 @@ async def lifespan(_: FastAPI):
             await task
 
 
-app = FastAPI(title=APP_NAME, version="0.11.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.12.0", lifespan=lifespan)
 app.middleware("http")(guard_request)
 
 
@@ -576,6 +578,198 @@ def get_software_inventory(
         "first_seen": item.first_seen.isoformat(),
         "last_seen": item.last_seen.isoformat(),
     } for item in items]
+
+
+@app.post("/api/v1/software-catalog")
+def create_software_catalog_item(
+    payload: SoftwareCatalogCreate,
+    identity: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT)),
+    db: Session = Depends(db_session),
+):
+    now = datetime.now(timezone.utc)
+    item = SoftwareCatalogItem(
+        name=payload.name.strip(),
+        publisher=(payload.publisher or "").strip() or None,
+        approved_version=(payload.approved_version or "").strip() or None,
+        policy=payload.policy,
+        created_by=identity.username,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(item)
+    db.flush()
+    db.add(AuditEvent(
+        event_type="SOFTWARE_CATALOG_CREATED",
+        actor=identity.username,
+        detail=f"id={item.id};name={item.name};policy={item.policy}",
+    ))
+    db.commit()
+    return {"id": item.id, "ok": True}
+
+
+@app.get("/api/v1/software-catalog")
+def list_software_catalog(
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)),
+    db: Session = Depends(db_session),
+):
+    items = db.scalars(
+        select(SoftwareCatalogItem).order_by(SoftwareCatalogItem.name)
+    ).all()
+    return [{
+        "id": item.id,
+        "name": item.name,
+        "publisher": item.publisher,
+        "approved_version": item.approved_version,
+        "policy": item.policy,
+        "created_by": item.created_by,
+        "created_at": item.created_at.isoformat(),
+        "updated_at": item.updated_at.isoformat(),
+    } for item in items]
+
+
+@app.patch("/api/v1/software-catalog/{catalog_id}")
+def update_software_catalog_item(
+    catalog_id: str,
+    payload: SoftwareCatalogUpdate,
+    identity: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT)),
+    db: Session = Depends(db_session),
+):
+    item = db.get(SoftwareCatalogItem, catalog_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="software catalog item not found")
+
+    changes = payload.model_dump(exclude_unset=True)
+    for field, value in changes.items():
+        if isinstance(value, str):
+            value = value.strip() or None
+        setattr(item, field, value)
+
+    item.updated_at = datetime.now(timezone.utc)
+    db.add(AuditEvent(
+        event_type="SOFTWARE_CATALOG_UPDATED",
+        actor=identity.username,
+        detail=f"id={item.id};changes={changes}",
+    ))
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/v1/devices/{device_id}/software-policy")
+def set_device_software_policy(
+    device_id: str,
+    payload: DeviceSoftwareAssignmentCreate,
+    identity: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT)),
+    db: Session = Depends(db_session),
+):
+    if db.get(Device, device_id) is None:
+        raise HTTPException(status_code=404, detail="device not found")
+    if db.get(SoftwareCatalogItem, payload.catalog_id) is None:
+        raise HTTPException(status_code=404, detail="software catalog item not found")
+
+    assignment = db.scalar(
+        select(DeviceSoftwareAssignment).where(
+            DeviceSoftwareAssignment.device_id == device_id,
+            DeviceSoftwareAssignment.catalog_id == payload.catalog_id,
+        )
+    )
+    now = datetime.now(timezone.utc)
+    if assignment is None:
+        assignment = DeviceSoftwareAssignment(
+            device_id=device_id,
+            catalog_id=payload.catalog_id,
+            desired_state=payload.desired_state,
+            assigned_by=identity.username,
+            assigned_at=now,
+        )
+        db.add(assignment)
+    else:
+        assignment.desired_state = payload.desired_state
+        assignment.assigned_by = identity.username
+        assignment.assigned_at = now
+
+    db.add(AuditEvent(
+        event_type="DEVICE_SOFTWARE_POLICY_SET",
+        device_id=device_id,
+        actor=identity.username,
+        detail=f"catalog_id={payload.catalog_id};desired={payload.desired_state}",
+    ))
+    db.commit()
+    return {"ok": True}
+
+
+@app.get("/api/v1/devices/{device_id}/software-policy")
+def get_device_software_policy(
+    device_id: str,
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)),
+    db: Session = Depends(db_session),
+):
+    if db.get(Device, device_id) is None:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    assignments = db.scalars(
+        select(DeviceSoftwareAssignment).where(
+            DeviceSoftwareAssignment.device_id == device_id
+        )
+    ).all()
+    installed = db.scalars(
+        select(InstalledApplication).where(
+            InstalledApplication.device_id == device_id,
+            InstalledApplication.is_present.is_(True),
+        )
+    ).all()
+
+    output = []
+    for assignment in assignments:
+        catalog = db.get(SoftwareCatalogItem, assignment.catalog_id)
+        if catalog is None:
+            continue
+
+        catalog_name = (catalog.name or "").strip().lower()
+        catalog_publisher = (catalog.publisher or "").strip().lower()
+        matches = [
+            app for app in installed
+            if (app.name or "").strip().lower() == catalog_name
+            and (
+                not catalog_publisher
+                or (app.publisher or "").strip().lower() == catalog_publisher
+            )
+        ]
+
+        present = bool(matches)
+        installed_versions = sorted({
+            (app.version or "").strip()
+            for app in matches
+            if (app.version or "").strip()
+        })
+        approved_version = (catalog.approved_version or "").strip()
+        version_compliant = (
+            True
+            if not approved_version
+            else approved_version in installed_versions
+        )
+
+        if assignment.desired_state == "REQUIRED":
+            compliant = present and version_compliant
+        else:
+            compliant = not present
+
+        output.append({
+            "assignment_id": assignment.id,
+            "catalog_id": catalog.id,
+            "name": catalog.name,
+            "publisher": catalog.publisher,
+            "approved_version": catalog.approved_version,
+            "catalog_policy": catalog.policy,
+            "desired_state": assignment.desired_state,
+            "present": present,
+            "installed_versions": installed_versions,
+            "version_compliant": version_compliant,
+            "compliant": compliant,
+            "assigned_by": assignment.assigned_by,
+            "assigned_at": assignment.assigned_at.isoformat(),
+        })
+
+    return output
 
 
 @app.get("/api/v1/operations/summary")
