@@ -17,6 +17,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Validate ops scripts and Compose
+        env:
+          POSTGRES_DB: ci_assetguard
+          POSTGRES_USER: ci_assetguard
+          POSTGRES_PASSWORD: ci-db-value
+          DATABASE_URL: postgresql+psycopg://ci_assetguard:ci-db-value@db:5432/ci_assetguard
+          ADMIN_TOKEN: ci-admin-value
+          SESSION_SECRET: ci-session-value
+        run: |
+          sh -n ops/backup-postgres.sh
+          sh -n ops/restore-postgres.sh
+          docker compose config >/dev/null
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
