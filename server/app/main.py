@@ -2,7 +2,7 @@ import hashlib
 import os
 import secrets
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
@@ -25,13 +25,15 @@ from .auth_schemas import LoginRequest
 from .database import SessionLocal
 from .models import AuditEvent, Device, DeviceObservation
 from .user_models import UserAccount
-from .schemas import DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
+from .schemas import DeviceAuthRevoke, DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
 
 APP_NAME = "YUDE Asset Guard"
 ENROLLMENT_TOKEN = os.getenv("ENROLLMENT_TOKEN", "")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 HEARTBEAT_SECONDS = int(os.getenv("HEARTBEAT_SECONDS", "300"))
 OFFLINE_SECONDS = int(os.getenv("HEARTBEAT_OFFLINE_SECONDS", "600"))
+DEVICE_AUTH_ROTATE_DAYS = int(os.getenv("DEVICE_AUTH_ROTATE_DAYS", "7"))
+DEVICE_AUTH_TTL_DAYS = int(os.getenv("DEVICE_AUTH_TTL_DAYS", "45"))
 STATIC_DIR = Path(__file__).parent / "static"
 
 def validate_configuration() -> None:
@@ -50,7 +52,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=APP_NAME, version="0.5.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.6.0", lifespan=lifespan)
 
 
 def db_session():
@@ -69,6 +71,25 @@ def as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value.astimezone(timezone.utc)
+
+
+def issue_device_auth(device: Device, now: datetime | None = None) -> str:
+    current = now or datetime.now(timezone.utc)
+    raw = secrets.token_urlsafe(48)
+    device.token_hash = sha256(raw)
+    device.auth_issued_at = current
+    device.auth_expires_at = current + timedelta(days=DEVICE_AUTH_TTL_DAYS)
+    device.auth_revoked_at = None
+    device.auth_generation = max(1, int(device.auth_generation or 0) + 1)
+    return raw
+
+
+def should_rotate_device_auth(device: Device, now: datetime | None = None) -> bool:
+    current = now or datetime.now(timezone.utc)
+    if device.auth_issued_at is None:
+        return True
+    issued = as_utc(device.auth_issued_at)
+    return current - issued >= timedelta(days=DEVICE_AUTH_ROTATE_DAYS)
 
 
 def require_identity(
@@ -109,6 +130,13 @@ def device_from_auth(
     device = db.scalar(select(Device).where(Device.token_hash == sha256(raw)))
     if device is None:
         raise HTTPException(status_code=401, detail="invalid device token")
+
+    now = datetime.now(timezone.utc)
+    if device.auth_revoked_at is not None:
+        raise HTTPException(status_code=401, detail="device credential revoked")
+    if device.auth_expires_at is not None and as_utc(device.auth_expires_at) <= now:
+        raise HTTPException(status_code=401, detail="device credential expired")
+
     return device
 
 
@@ -180,8 +208,6 @@ def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_se
     if not secrets.compare_digest(payload.enrollment_token, ENROLLMENT_TOKEN):
         raise HTTPException(status_code=403, detail="invalid enrollment token")
 
-    raw_token = secrets.token_urlsafe(48)
-
     device = None
     if payload.hardware_uuid:
         device = db.scalar(select(Device).where(Device.hardware_uuid == payload.hardware_uuid))
@@ -198,7 +224,7 @@ def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_se
         device = Device(
             hostname=payload.hostname,
             platform=payload.platform,
-            token_hash=sha256(raw_token),
+            token_hash=sha256(secrets.token_urlsafe(48)),
         )
         db.add(device)
         db.flush()
@@ -212,9 +238,10 @@ def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_se
     device.manufacturer = payload.manufacturer
     device.model = payload.model
     device.hardware_uuid = payload.hardware_uuid
-    device.token_hash = sha256(raw_token)
+    now = datetime.now(timezone.utc)
+    raw_token = issue_device_auth(device, now)
     device.public_ip = client_ip(request)
-    device.last_seen = datetime.now(timezone.utc)
+    device.last_seen = now
 
     db.add(AuditEvent(event_type=event_type, device_id=device.id, detail=f"{device.platform}:{device.hostname}"))
     db.add(DeviceObservation(
@@ -291,6 +318,17 @@ def heartbeat(
             battery_percent=device.battery_percent,
         ))
 
+    rotated_token = None
+    now = datetime.now(timezone.utc)
+    if should_rotate_device_auth(device, now):
+        rotated_token = issue_device_auth(device, now)
+        db.add(AuditEvent(
+            event_type="DEVICE_AUTH_ROTATED",
+            device_id=device.id,
+            actor="system",
+            detail=f"generation={device.auth_generation}",
+        ))
+
     db.commit()
 
     return {
@@ -298,6 +336,8 @@ def heartbeat(
         "device_id": device.id,
         "lost_mode": device.lost_mode,
         "next_heartbeat_seconds": 60 if device.lost_mode else HEARTBEAT_SECONDS,
+        "device_token": rotated_token,
+        "auth_expires_at": device.auth_expires_at.isoformat() if device.auth_expires_at else None,
     }
 
 
@@ -436,6 +476,31 @@ def set_lost_mode(
     ))
     db.commit()
     return {"ok": True, "lost_mode": device.lost_mode}
+
+
+@app.post("/api/v1/devices/{device_id}/revoke-auth")
+def revoke_device_auth(
+    device_id: str,
+    payload: DeviceAuthRevoke,
+    identity: SessionIdentity = Depends(require_roles(ROLE_ADMIN)),
+    db: Session = Depends(db_session),
+):
+    device = db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    now = datetime.now(timezone.utc)
+    device.auth_revoked_at = now
+    device.auth_expires_at = now
+    device.token_hash = sha256(secrets.token_urlsafe(64))
+    db.add(AuditEvent(
+        event_type="DEVICE_AUTH_REVOKED",
+        device_id=device.id,
+        actor=identity.username,
+        detail=payload.reason,
+    ))
+    db.commit()
+    return {"ok": True, "revoked": True}
 
 
 @app.get("/api/v1/audit")
