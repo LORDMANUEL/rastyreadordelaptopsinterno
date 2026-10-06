@@ -69,6 +69,7 @@ jobs:
               "geo_region_name",
               "geo_city_name",
               "geo_accuracy_km",
+              "offline_since",
           }
           assert required.issubset(cols), cols
           tables = inspector.get_table_names()

@@ -1,7 +1,9 @@
+import asyncio
 import hashlib
+import logging
 import os
 import secrets
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -41,7 +43,9 @@ HEARTBEAT_SECONDS = int(os.getenv("HEARTBEAT_SECONDS", "300"))
 OFFLINE_SECONDS = int(os.getenv("HEARTBEAT_OFFLINE_SECONDS", "600"))
 DEVICE_AUTH_ROTATE_DAYS = int(os.getenv("DEVICE_AUTH_ROTATE_DAYS", "7"))
 DEVICE_AUTH_TTL_DAYS = int(os.getenv("DEVICE_AUTH_TTL_DAYS", "45"))
+OFFLINE_MONITOR_SECONDS = int(os.getenv("OFFLINE_MONITOR_SECONDS", "60"))
 STATIC_DIR = Path(__file__).parent / "static"
+LOGGER = logging.getLogger("yude_asset_guard")
 
 def validate_configuration() -> None:
     required = {
@@ -55,13 +59,52 @@ def validate_configuration() -> None:
     validate_geo_configuration()
 
 
+def scan_offline_devices(db: Session, now: datetime | None = None) -> int:
+    current = now or datetime.now(timezone.utc)
+    marked = 0
+    devices = db.scalars(
+        select(Device).where(Device.offline_since.is_(None))
+    ).all()
+    for device in devices:
+        age = current - as_utc(device.last_seen)
+        if age.total_seconds() <= OFFLINE_SECONDS:
+            continue
+        device.offline_since = current
+        db.add(AuditEvent(
+            event_type="DEVICE_OFFLINE",
+            device_id=device.id,
+            actor="system",
+            detail=f"last_seen={as_utc(device.last_seen).isoformat()}",
+        ))
+        marked += 1
+    if marked:
+        db.commit()
+    return marked
+
+
+async def offline_monitor_loop() -> None:
+    while True:
+        try:
+            with SessionLocal() as db:
+                scan_offline_devices(db)
+        except Exception:
+            LOGGER.exception("offline monitor failed")
+        await asyncio.sleep(max(15, OFFLINE_MONITOR_SECONDS))
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     validate_configuration()
-    yield
+    task = asyncio.create_task(offline_monitor_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
-app = FastAPI(title=APP_NAME, version="0.10.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.11.0", lifespan=lifespan)
 app.middleware("http")(guard_request)
 
 
@@ -379,6 +422,18 @@ def heartbeat(
     public_ip_changed = previous["public_ip"] != device.public_ip
     if public_ip_changed or device.geo_updated_at is None:
         apply_network_location(device, lookup_network_location(device.public_ip), now)
+
+    if device.offline_since is not None:
+        offline_since = as_utc(device.offline_since)
+        duration_seconds = max(0, int((now - offline_since).total_seconds()))
+        db.add(AuditEvent(
+            event_type="DEVICE_ONLINE_RESTORED",
+            device_id=device.id,
+            actor="system",
+            detail=f"offline_seconds={duration_seconds}",
+        ))
+        device.offline_since = None
+
     device.last_seen = now
 
     network_changed = any((
@@ -523,6 +578,39 @@ def get_software_inventory(
     } for item in items]
 
 
+@app.get("/api/v1/operations/summary")
+def operations_summary(
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)),
+    db: Session = Depends(db_session),
+):
+    now = datetime.now(timezone.utc)
+    devices = db.scalars(select(Device)).all()
+    online = 0
+    offline = 0
+    lost = 0
+    by_platform: dict[str, int] = {}
+
+    for device in devices:
+        age = max(0, int((now - as_utc(device.last_seen)).total_seconds()))
+        if age <= OFFLINE_SECONDS:
+            online += 1
+        else:
+            offline += 1
+        if device.lost_mode:
+            lost += 1
+        platform = device.platform or "unknown"
+        by_platform[platform] = by_platform.get(platform, 0) + 1
+
+    return {
+        "total": len(devices),
+        "online": online,
+        "offline": offline,
+        "lost_mode": lost,
+        "by_platform": by_platform,
+        "generated_at": now.isoformat(),
+    }
+
+
 @app.get("/api/v1/devices")
 def list_devices(_: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)), db: Session = Depends(db_session)):
     now = datetime.now(timezone.utc)
@@ -562,6 +650,7 @@ def list_devices(_: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUP
             "auth_generation": d.auth_generation,
             "auth_expires_at": d.auth_expires_at.isoformat() if d.auth_expires_at else None,
             "auth_revoked_at": d.auth_revoked_at.isoformat() if d.auth_revoked_at else None,
+            "offline_since": d.offline_since.isoformat() if d.offline_since else None,
             "last_seen": d.last_seen.isoformat(),
             "online": age <= OFFLINE_SECONDS,
         })
@@ -605,6 +694,7 @@ def get_device(device_id: str, _: SessionIdentity = Depends(require_roles(ROLE_A
         "auth_generation": device.auth_generation,
         "auth_expires_at": device.auth_expires_at.isoformat() if device.auth_expires_at else None,
         "auth_revoked_at": device.auth_revoked_at.isoformat() if device.auth_revoked_at else None,
+        "offline_since": device.offline_since.isoformat() if device.offline_since else None,
         "created_at": device.created_at.isoformat(),
         "last_seen": device.last_seen.isoformat(),
     }

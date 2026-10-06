@@ -51,6 +51,7 @@ class Device(Base):
     antivirus_status: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     lost_mode: Mapped[bool] = mapped_column(Boolean, default=False)
+    offline_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
