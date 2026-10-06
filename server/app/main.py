@@ -29,11 +29,13 @@ from .http_security import guard_request
 from .models import AuditEvent, Device, DeviceObservation
 from .enrollment_models import EnrollmentCode
 from .software_models import InstalledApplication
+from .software_policy_models import DeviceSoftwareAssignment, SoftwareCatalogItem
 from .network_geo import NetworkLocation, lookup_network_location, validate_geo_configuration
 from .user_models import UserAccount
 from .schemas import DeviceAuthRevoke, DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
 from .enrollment_schemas import EnrollmentCodeCreate, EnrollmentCodeRevoke
 from .software_schemas import SoftwareInventorySync
+from .software_policy_schemas import DeviceSoftwareAssignmentCreate, SoftwareCatalogCreate, SoftwareCatalogUpdate
 
 APP_NAME = "YUDE Asset Guard"
 ENROLLMENT_TOKEN = os.getenv("ENROLLMENT_TOKEN", "")
@@ -104,7 +106,7 @@ async def lifespan(_: FastAPI):
             await task
 
 
-app = FastAPI(title=APP_NAME, version="0.11.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.12.0", lifespan=lifespan)
 app.middleware("http")(guard_request)
 
 
