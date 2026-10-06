@@ -60,6 +60,7 @@ jobs:
           tables = inspector.get_table_names()
           assert "device_observations" in tables
           assert "user_accounts" in tables
+          assert "installed_applications" in tables
           assert app.title == "YUDE Asset Guard"
           print("FastAPI + migrations OK")
           PY
