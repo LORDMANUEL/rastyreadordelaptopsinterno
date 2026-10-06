@@ -17,7 +17,7 @@ def upgrade() -> None:
     op.add_column("devices", sa.Column("auth_issued_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("devices", sa.Column("auth_expires_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("devices", sa.Column("auth_revoked_at", sa.DateTime(timezone=True), nullable=True))
-    op.add_column("devices", sa.Column("auth_generation", sa.Integer(), nullable=False, server_default="1"))
+    op.add_column("devices", sa.Column("auth_generation", sa.Integer(), nullable=False, server_default="0"))
 
 
 def downgrade() -> None:
