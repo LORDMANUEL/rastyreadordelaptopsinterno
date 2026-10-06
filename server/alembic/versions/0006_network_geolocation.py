@@ -19,8 +19,6 @@ def upgrade() -> None:
         ("geo_country_name", sa.Column("geo_country_name", sa.String(length=120), nullable=True)),
         ("geo_region_name", sa.Column("geo_region_name", sa.String(length=160), nullable=True)),
         ("geo_city_name", sa.Column("geo_city_name", sa.String(length=160), nullable=True)),
-        ("geo_latitude", sa.Column("geo_latitude", sa.Float(), nullable=True)),
-        ("geo_longitude", sa.Column("geo_longitude", sa.Float(), nullable=True)),
         ("geo_accuracy_km", sa.Column("geo_accuracy_km", sa.Integer(), nullable=True)),
         ("geo_updated_at", sa.Column("geo_updated_at", sa.DateTime(timezone=True), nullable=True)),
     ):
@@ -30,8 +28,6 @@ def upgrade() -> None:
         ("geo_country_code", sa.Column("geo_country_code", sa.String(length=8), nullable=True)),
         ("geo_region_name", sa.Column("geo_region_name", sa.String(length=160), nullable=True)),
         ("geo_city_name", sa.Column("geo_city_name", sa.String(length=160), nullable=True)),
-        ("geo_latitude", sa.Column("geo_latitude", sa.Float(), nullable=True)),
-        ("geo_longitude", sa.Column("geo_longitude", sa.Float(), nullable=True)),
         ("geo_accuracy_km", sa.Column("geo_accuracy_km", sa.Integer(), nullable=True)),
     ):
         op.add_column("device_observations", column)
@@ -40,8 +36,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     for name in (
         "geo_accuracy_km",
-        "geo_longitude",
-        "geo_latitude",
         "geo_city_name",
         "geo_region_name",
         "geo_country_code",
@@ -51,8 +45,6 @@ def downgrade() -> None:
     for name in (
         "geo_updated_at",
         "geo_accuracy_km",
-        "geo_longitude",
-        "geo_latitude",
         "geo_city_name",
         "geo_region_name",
         "geo_country_name",
