@@ -1,7 +1,9 @@
+import asyncio
 import hashlib
+import logging
 import os
 import secrets
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -41,7 +43,9 @@ HEARTBEAT_SECONDS = int(os.getenv("HEARTBEAT_SECONDS", "300"))
 OFFLINE_SECONDS = int(os.getenv("HEARTBEAT_OFFLINE_SECONDS", "600"))
 DEVICE_AUTH_ROTATE_DAYS = int(os.getenv("DEVICE_AUTH_ROTATE_DAYS", "7"))
 DEVICE_AUTH_TTL_DAYS = int(os.getenv("DEVICE_AUTH_TTL_DAYS", "45"))
+OFFLINE_MONITOR_SECONDS = int(os.getenv("OFFLINE_MONITOR_SECONDS", "60"))
 STATIC_DIR = Path(__file__).parent / "static"
+LOGGER = logging.getLogger("yude_asset_guard")
 
 def validate_configuration() -> None:
     required = {
