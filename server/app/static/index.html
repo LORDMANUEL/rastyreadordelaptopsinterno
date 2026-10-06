@@ -15,7 +15,7 @@
     .value{font-size:32px;font-weight:700;margin-top:8px}
     table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #26314f;font-size:14px}
     tbody tr{cursor:pointer}tbody tr:hover{background:#17223d}
-    button,input{background:#0d1530;color:#fff;border:1px solid #33446f;border-radius:9px;padding:10px}
+    button,input,select{background:#0d1530;color:#fff;border:1px solid #33446f;border-radius:9px;padding:10px}
     button{cursor:pointer}.danger{border-color:#7a303c}.lost{color:#ff7474}.online{color:#75e6a4}.offline{color:#f4c76a}
     .detail{display:none;margin-top:18px}.detail.open{display:block}
     .detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px}
@@ -57,6 +57,29 @@
       <div class="card"><div class="muted">Modo pérdida</div><div id="lost" class="value">0</div></div>
     </section>
 
+    <section class="panel" style="margin-bottom:18px">
+      <div class="actions" style="margin-top:0">
+        <button onclick="loadCatalog()">Catálogo de software</button>
+      </div>
+      <div id="catalogBox" style="display:none;margin-top:16px">
+        <div id="catalogEditor" class="actions" style="margin-top:0">
+          <input id="catalogName" placeholder="Aplicación">
+          <input id="catalogPublisher" placeholder="Fabricante">
+          <input id="catalogVersion" placeholder="Versión aprobada">
+          <select id="catalogPolicy">
+            <option value="ALLOWED">Permitida</option>
+            <option value="REQUIRED">Requerida</option>
+            <option value="BLOCKED">Bloqueada</option>
+          </select>
+          <button onclick="createCatalogItem()">Agregar</button>
+        </div>
+        <table style="margin-top:12px">
+          <thead><tr><th>Aplicación</th><th>Fabricante</th><th>Versión</th><th>Política</th><th>Actualizado</th></tr></thead>
+          <tbody id="catalogRows"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel">
       <table>
         <thead><tr><th>Activo</th><th>Equipo</th><th>Usuario</th><th>Sucursal</th><th>Plataforma</th><th>IP pública</th><th>Último contacto</th><th>Estado</th></tr></thead>
@@ -75,6 +98,7 @@
         <button id="revokeAuthButton" class="danger" onclick="revokeDeviceAuth()">Revocar identidad agente</button>
         <button onclick="loadHistory()">Historial</button>
         <button onclick="loadSoftware()">Aplicaciones</button>
+        <button onclick="loadSoftwarePolicy()">Política software</button>
         <button onclick="loadDevices()">Actualizar</button>
       </div>
       <div id="historyBox" style="display:none;margin-top:16px;overflow:auto">
@@ -89,6 +113,20 @@
           <tbody id="softwareRows"></tbody>
         </table>
       </div>
+      <div id="softwarePolicyBox" style="display:none;margin-top:16px;overflow:auto">
+        <div id="softwarePolicyEditor" class="actions" style="margin-top:0">
+          <select id="policyCatalogSelect"></select>
+          <select id="policyDesiredState">
+            <option value="REQUIRED">Debe estar instalada</option>
+            <option value="ABSENT">Debe estar ausente</option>
+          </select>
+          <button onclick="assignSoftwarePolicy()">Asignar política</button>
+        </div>
+        <table style="margin-top:12px">
+          <thead><tr><th>Aplicación</th><th>Deseado</th><th>Presente</th><th>Cumplimiento</th><th>Asignado por</th></tr></thead>
+          <tbody id="softwarePolicyRows"></tbody>
+        </table>
+      </div>
       <div class="muted small" style="margin-top:12px">El modo pérdida aumenta la frecuencia de heartbeat. No activa cámara, micrófono, keylogger ni lectura de comunicaciones.</div>
     </section>
   </div>
@@ -98,6 +136,7 @@
 let devices=[];
 let selected=null;
 let currentRole=null;
+let softwareCatalog=[];
 
 function esc(v){return String(v??'-').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function field(label,value){return '<div class="field"><span class="muted small">'+esc(label)+'</span><b>'+esc(value??'-')+'</b></div>'}
@@ -145,6 +184,7 @@ function showApp(usernameValue,roleValue){
   app.style.display='block';
   sessionControls.style.display='flex';
   sessionUser.textContent=usernameValue+' · '+roleValue;
+  catalogEditor.style.display=roleValue==='AUDITORIA'?'none':'flex';
 }
 
 async function initialize(){
@@ -153,6 +193,42 @@ async function initialize(){
   const identity=await me.json();
   showApp(identity.username,identity.role);
   await loadDevices();
+}
+
+async function loadCatalog(){
+  const r=await api('/api/v1/software-catalog');
+  if(!r.ok){alert('No se pudo cargar el catálogo');return}
+  softwareCatalog=await r.json();
+  catalogRows.innerHTML=softwareCatalog.map(x=>'<tr>'+
+    '<td>'+esc(x.name)+'</td>'+
+    '<td>'+esc(x.publisher||'-')+'</td>'+
+    '<td>'+esc(x.approved_version||'-')+'</td>'+
+    '<td>'+esc(x.policy)+'</td>'+
+    '<td>'+new Date(x.updated_at).toLocaleString()+'</td>'+
+  '</tr>').join('');
+  policyCatalogSelect.innerHTML=softwareCatalog.map(x=>
+    '<option value="'+esc(x.id)+'">'+esc(x.name)+' · '+esc(x.policy)+'</option>'
+  ).join('');
+  catalogBox.style.display='block';
+}
+
+async function createCatalogItem(){
+  if(currentRole==='AUDITORIA')return;
+  const name=catalogName.value.trim();
+  if(!name){alert('Indique el nombre de la aplicación');return}
+  const r=await api('/api/v1/software-catalog',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      name,
+      publisher:catalogPublisher.value.trim()||null,
+      approved_version:catalogVersion.value.trim()||null,
+      policy:catalogPolicy.value
+    })
+  });
+  if(!r.ok){alert('No se pudo crear el elemento del catálogo');return}
+  catalogName.value='';catalogPublisher.value='';catalogVersion.value='';
+  await loadCatalog();
 }
 
 async function loadDevices(){
@@ -238,12 +314,46 @@ async function loadSoftware(){
   softwareBox.style.display='block';
 }
 
+async function loadSoftwarePolicy(){
+  if(!selected)return;
+  if(!softwareCatalog.length)await loadCatalog();
+  const r=await api('/api/v1/devices/'+selected.id+'/software-policy');
+  if(!r.ok){alert('No se pudo cargar la política de software');return}
+  const data=await r.json();
+  softwarePolicyRows.innerHTML=data.map(x=>'<tr>'+
+    '<td>'+esc(x.name)+'</td>'+
+    '<td>'+esc(x.desired_state)+'</td>'+
+    '<td>'+(x.present?'SÍ':'NO')+'</td>'+
+    '<td class="'+(x.compliant?'online':'lost')+'">'+(x.compliant?'CUMPLE':'NO CUMPLE')+'</td>'+
+    '<td>'+esc(x.assigned_by)+'</td>'+
+  '</tr>').join('');
+  softwarePolicyEditor.style.display=currentRole==='AUDITORIA'?'none':'flex';
+  softwarePolicyBox.style.display='block';
+}
+
+async function assignSoftwarePolicy(){
+  if(!selected||currentRole==='AUDITORIA')return;
+  if(!policyCatalogSelect.value){alert('Seleccione una aplicación del catálogo');return}
+  const r=await api('/api/v1/devices/'+selected.id+'/software-policy',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({
+      catalog_id:policyCatalogSelect.value,
+      desired_state:policyDesiredState.value
+    })
+  });
+  if(!r.ok){alert('No se pudo asignar la política');return}
+  await loadSoftwarePolicy();
+}
+
 function closeDetail(){
   detail.classList.remove('open');
   historyBox.style.display='none';
   historyRows.innerHTML='';
   softwareBox.style.display='none';
   softwareRows.innerHTML='';
+  softwarePolicyBox.style.display='none';
+  softwarePolicyRows.innerHTML='';
   selected=null;
 }
 
