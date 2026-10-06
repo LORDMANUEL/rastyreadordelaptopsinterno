@@ -75,6 +75,7 @@
         <button id="revokeAuthButton" class="danger" onclick="revokeDeviceAuth()">Revocar identidad agente</button>
         <button onclick="loadHistory()">Historial</button>
         <button onclick="loadSoftware()">Aplicaciones</button>
+        <button onclick="loadSoftwarePolicy()">Política software</button>
         <button onclick="loadDevices()">Actualizar</button>
       </div>
       <div id="historyBox" style="display:none;margin-top:16px;overflow:auto">
@@ -87,6 +88,12 @@
         <table>
           <thead><tr><th>Aplicación</th><th>Versión</th><th>Fabricante</th><th>Fuente</th><th>Última detección</th></tr></thead>
           <tbody id="softwareRows"></tbody>
+        </table>
+      </div>
+      <div id="policyBox" style="display:none;margin-top:16px;overflow:auto">
+        <table>
+          <thead><tr><th>Aplicación</th><th>Deseado</th><th>Versión aprobada</th><th>Versiones instaladas</th><th>Estado</th></tr></thead>
+          <tbody id="policyRows"></tbody>
         </table>
       </div>
       <div class="muted small" style="margin-top:12px">El modo pérdida aumenta la frecuencia de heartbeat. No activa cámara, micrófono, keylogger ni lectura de comunicaciones.</div>
@@ -244,12 +251,32 @@ async function loadSoftware(){
   softwareBox.style.display='block';
 }
 
+async function loadSoftwarePolicy(){
+  if(!selected)return;
+  const r=await api('/api/v1/devices/'+selected.id+'/software-policy');
+  if(!r.ok){alert('No se pudo cargar la política de software');return}
+  const data=await r.json();
+  policyRows.innerHTML=data.map(x=>'<tr>'+
+    '<td>'+esc(x.name)+'</td>'+
+    '<td>'+esc(x.desired_state)+'</td>'+
+    '<td>'+esc(x.approved_version||'-')+'</td>'+
+    '<td>'+esc((x.installed_versions||[]).join(', ')||'-')+'</td>'+
+    '<td class="'+(x.compliant?'online':'lost')+'">'+(x.compliant?'CUMPLE':'NO CUMPLE')+'</td>'+
+  '</tr>').join('');
+  if(data.length===0){
+    policyRows.innerHTML='<tr><td colspan="5" class="muted">Sin políticas asignadas.</td></tr>';
+  }
+  policyBox.style.display='block';
+}
+
 function closeDetail(){
   detail.classList.remove('open');
   historyBox.style.display='none';
   historyRows.innerHTML='';
   softwareBox.style.display='none';
   softwareRows.innerHTML='';
+  policyBox.style.display='none';
+  policyRows.innerHTML='';
   selected=null;
 }
 
