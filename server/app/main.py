@@ -217,6 +217,16 @@ def health():
     return {"status": "ok", "service": APP_NAME, "version": app.version}
 
 
+@app.get("/ready")
+def ready():
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="database unavailable") from exc
+    return {"status": "ready", "database": "ok"}
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
     return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
