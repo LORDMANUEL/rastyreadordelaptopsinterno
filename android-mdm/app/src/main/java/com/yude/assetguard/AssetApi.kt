@@ -8,7 +8,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 data class EnrollResult(val deviceId: String, val deviceToken: String)
-data class HeartbeatResult(val lostMode: Boolean)
+data class HeartbeatResult(val lostMode: Boolean, val rotated: Boolean)
 
 object AssetApi {
     fun enroll(serverUrl: String, enrollmentToken: String, androidId: String): EnrollResult {
@@ -51,7 +51,16 @@ object AssetApi {
             .put("battery_percent", percent)
 
         val response = post(serverUrl + "/api/v1/heartbeat", deviceToken, payload)
-        return HeartbeatResult(response.optBoolean("lost_mode", false))
+        val rotatedToken = response.optString("device_token", "")
+        var rotated = false
+        if (rotatedToken.isNotBlank() && rotatedToken != deviceToken) {
+            prefs.edit().putString("device_token", rotatedToken).apply()
+            rotated = true
+        }
+        return HeartbeatResult(
+            response.optBoolean("lost_mode", false),
+            rotated
+        )
     }
 
     private fun post(url: String, bearer: String?, payload: JSONObject): JSONObject {

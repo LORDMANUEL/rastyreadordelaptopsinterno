@@ -27,9 +27,13 @@ services:
       SESSION_SECRET: ${SESSION_SECRET}
       SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-28800}
       HEARTBEAT_OFFLINE_SECONDS: ${HEARTBEAT_OFFLINE_SECONDS:-600}
+      NETWORK_GEO_REQUIRED: ${NETWORK_GEO_REQUIRED:-false}
+      GEOIP_CITY_DB: ${GEOIP_CITY_DB:-/geoip/GeoLite2-City.mmdb}
     depends_on:
       db:
         condition: service_healthy
+    volumes:
+      - ./geoip:/geoip:ro
     ports:
       - "8000:8000"
 

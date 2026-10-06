@@ -2,7 +2,7 @@ import hashlib
 import os
 import secrets
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
@@ -10,26 +10,33 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .auth import (
-    ADMIN_PASSWORD_HASH,
-    ADMIN_PASSWORD_SALT,
-    ADMIN_USERNAME,
+from .rbac import (
+    ROLE_ADMIN,
+    ROLE_AUDIT,
+    ROLE_SUPPORT,
     SESSION_SECRET,
     SESSION_TTL_SECONDS,
+    SessionIdentity,
     create_session,
     parse_session,
-    verify_admin_credentials,
+    verify_auth_value,
 )
 from .auth_schemas import LoginRequest
 from .database import SessionLocal
 from .models import AuditEvent, Device, DeviceObservation
-from .schemas import DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
+from .software_models import InstalledApplication
+from .network_geo import NetworkLocation, lookup_network_location, validate_geo_configuration
+from .user_models import UserAccount
+from .schemas import DeviceAuthRevoke, DeviceUpdate, EnrollRequest, EnrollResponse, HeartbeatRequest, LostModeUpdate
+from .software_schemas import SoftwareInventorySync
 
 APP_NAME = "YUDE Asset Guard"
 ENROLLMENT_TOKEN = os.getenv("ENROLLMENT_TOKEN", "")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 HEARTBEAT_SECONDS = int(os.getenv("HEARTBEAT_SECONDS", "300"))
 OFFLINE_SECONDS = int(os.getenv("HEARTBEAT_OFFLINE_SECONDS", "600"))
+DEVICE_AUTH_ROTATE_DAYS = int(os.getenv("DEVICE_AUTH_ROTATE_DAYS", "7"))
+DEVICE_AUTH_TTL_DAYS = int(os.getenv("DEVICE_AUTH_TTL_DAYS", "45"))
 STATIC_DIR = Path(__file__).parent / "static"
 
 def validate_configuration() -> None:
@@ -40,6 +47,7 @@ def validate_configuration() -> None:
     missing = [name for name, value in required.items() if not value]
     if missing:
         raise RuntimeError("missing required configuration: " + ", ".join(missing))
+    validate_geo_configuration()
 
 
 @asynccontextmanager
@@ -48,7 +56,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=APP_NAME, version="0.4.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.8.0", lifespan=lifespan)
 
 
 def db_session():
@@ -69,20 +77,66 @@ def as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
-def require_admin(
+def issue_device_auth(device: Device, now: datetime | None = None) -> str:
+    current = now or datetime.now(timezone.utc)
+    raw = secrets.token_urlsafe(48)
+    device.token_hash = sha256(raw)
+    device.auth_issued_at = current
+    device.auth_expires_at = current + timedelta(days=DEVICE_AUTH_TTL_DAYS)
+    device.auth_revoked_at = None
+    device.auth_generation = max(1, int(device.auth_generation or 0) + 1)
+    return raw
+
+
+def should_rotate_device_auth(device: Device, now: datetime | None = None) -> bool:
+    current = now or datetime.now(timezone.utc)
+    if device.auth_issued_at is None:
+        return True
+    issued = as_utc(device.auth_issued_at)
+    return current - issued >= timedelta(days=DEVICE_AUTH_ROTATE_DAYS)
+
+
+def apply_network_location(
+    device: Device,
+    location: NetworkLocation | None,
+    now: datetime | None = None,
+) -> None:
+    if location is None:
+        return
+    device.geo_country_code = location.country_code
+    device.geo_country_name = location.country_name
+    device.geo_region_name = location.region_name
+    device.geo_city_name = location.city_name
+    device.geo_accuracy_km = location.accuracy_km
+    device.geo_updated_at = now or datetime.now(timezone.utc)
+
+
+def require_identity(
     request: Request,
     x_admin_token: str = Header(default=""),
     assetguard_session: str | None = Cookie(default=None),
-) -> str:
+    db: Session = Depends(db_session),
+) -> SessionIdentity:
     if x_admin_token and secrets.compare_digest(x_admin_token, ADMIN_TOKEN):
-        return "automation"
+        return SessionIdentity(username="automation", role=ROLE_ADMIN)
 
     if assetguard_session:
         identity = parse_session(assetguard_session)
         if identity is not None:
-            return identity.username
+            account = db.scalar(select(UserAccount).where(UserAccount.username == identity.username))
+            if account is not None and account.is_active and account.role == identity.role:
+                return identity
 
     raise HTTPException(status_code=401, detail="authentication required")
+
+
+def require_roles(*allowed_roles: str):
+    def dependency(identity: SessionIdentity = Depends(require_identity)) -> SessionIdentity:
+        if identity.role not in allowed_roles:
+            raise HTTPException(status_code=403, detail="insufficient permissions")
+        return identity
+
+    return dependency
 
 
 def device_from_auth(
@@ -95,6 +149,13 @@ def device_from_auth(
     device = db.scalar(select(Device).where(Device.token_hash == sha256(raw)))
     if device is None:
         raise HTTPException(status_code=401, detail="invalid device token")
+
+    now = datetime.now(timezone.utc)
+    if device.auth_revoked_at is not None:
+        raise HTTPException(status_code=401, detail="device credential revoked")
+    if device.auth_expires_at is not None and as_utc(device.auth_expires_at) <= now:
+        raise HTTPException(status_code=401, detail="device credential expired")
+
     return device
 
 
@@ -102,6 +163,14 @@ def client_ip(request: Request) -> str | None:
     # Uvicorn's trusted proxy middleware normalizes request.client.
     # Do not trust a raw X-Forwarded-For header from arbitrary clients here.
     return request.client.host if request.client else None
+
+
+def software_app_key(name: str, version: str | None, publisher: str | None, source: str | None) -> str:
+    canonical = "|".join(
+        (value or "").strip().lower()
+        for value in (name, version, publisher, source)
+    )
+    return sha256(canonical)
 
 
 @app.get("/health")
@@ -115,22 +184,33 @@ def dashboard():
 
 
 @app.post("/api/v1/auth/login")
-def login(payload: LoginRequest, response: Response):
-    if not all((ADMIN_USERNAME, ADMIN_PASSWORD_SALT, ADMIN_PASSWORD_HASH, SESSION_SECRET)):
+def login(payload: LoginRequest, response: Response, db: Session = Depends(db_session)):
+    if not SESSION_SECRET:
         raise HTTPException(status_code=503, detail="web authentication is not configured")
-    if not verify_admin_credentials(payload.username, payload.password):
+
+    account = db.scalar(select(UserAccount).where(UserAccount.username == payload.username))
+    if (
+        account is None
+        or not account.is_active
+        or not verify_auth_value(payload.password, account.auth_salt, account.auth_digest)
+    ):
         raise HTTPException(status_code=401, detail="invalid credentials")
+
+    account.last_login = datetime.now(timezone.utc)
+    account.updated_at = datetime.now(timezone.utc)
+    db.add(AuditEvent(event_type="USER_LOGIN", actor=account.username, detail=account.role))
+    db.commit()
 
     response.set_cookie(
         key="assetguard_session",
-        value=create_session(payload.username),
+        value=create_session(account.username, account.role),
         httponly=True,
         secure=True,
         samesite="strict",
         path="/",
         max_age=SESSION_TTL_SECONDS,
     )
-    return {"ok": True, "username": payload.username}
+    return {"ok": True, "username": account.username, "role": account.role}
 
 
 @app.post("/api/v1/auth/logout")
@@ -146,16 +226,14 @@ def logout(response: Response):
 
 
 @app.get("/api/v1/auth/me")
-def auth_me(actor: str = Depends(require_admin)):
-    return {"authenticated": True, "username": actor}
+def auth_me(identity: SessionIdentity = Depends(require_identity)):
+    return {"authenticated": True, "username": identity.username, "role": identity.role}
 
 
 @app.post("/api/v1/enroll", response_model=EnrollResponse)
 def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_session)):
     if not secrets.compare_digest(payload.enrollment_token, ENROLLMENT_TOKEN):
         raise HTTPException(status_code=403, detail="invalid enrollment token")
-
-    raw_token = secrets.token_urlsafe(48)
 
     device = None
     if payload.hardware_uuid:
@@ -173,7 +251,7 @@ def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_se
         device = Device(
             hostname=payload.hostname,
             platform=payload.platform,
-            token_hash=sha256(raw_token),
+            token_hash=sha256(secrets.token_urlsafe(48)),
         )
         db.add(device)
         db.flush()
@@ -187,15 +265,21 @@ def enroll(payload: EnrollRequest, request: Request, db: Session = Depends(db_se
     device.manufacturer = payload.manufacturer
     device.model = payload.model
     device.hardware_uuid = payload.hardware_uuid
-    device.token_hash = sha256(raw_token)
+    now = datetime.now(timezone.utc)
+    raw_token = issue_device_auth(device, now)
     device.public_ip = client_ip(request)
-    device.last_seen = datetime.now(timezone.utc)
+    apply_network_location(device, lookup_network_location(device.public_ip), now)
+    device.last_seen = now
 
     db.add(AuditEvent(event_type=event_type, device_id=device.id, detail=f"{device.platform}:{device.hostname}"))
     db.add(DeviceObservation(
         device_id=device.id,
         reason=event_type,
         public_ip=device.public_ip,
+        geo_country_code=device.geo_country_code,
+        geo_region_name=device.geo_region_name,
+        geo_city_name=device.geo_city_name,
+        geo_accuracy_km=device.geo_accuracy_km,
     ))
     db.commit()
     return EnrollResponse(device_id=device.id, device_token=raw_token, heartbeat_seconds=HEARTBEAT_SECONDS)
@@ -238,7 +322,11 @@ def heartbeat(
             setattr(device, field, value)
 
     device.public_ip = new_public_ip
-    device.last_seen = datetime.now(timezone.utc)
+    now = datetime.now(timezone.utc)
+    public_ip_changed = previous["public_ip"] != device.public_ip
+    if public_ip_changed or device.geo_updated_at is None:
+        apply_network_location(device, lookup_network_location(device.public_ip), now)
+    device.last_seen = now
 
     network_changed = any((
         previous["lan_ip"] != device.lan_ip,
@@ -263,7 +351,22 @@ def heartbeat(
             lan_ip=device.lan_ip,
             public_ip=device.public_ip,
             wifi_ssid=device.wifi_ssid,
+            geo_country_code=device.geo_country_code,
+            geo_region_name=device.geo_region_name,
+            geo_city_name=device.geo_city_name,
+            geo_accuracy_km=device.geo_accuracy_km,
             battery_percent=device.battery_percent,
+        ))
+
+    rotated_token = None
+    now = datetime.now(timezone.utc)
+    if should_rotate_device_auth(device, now):
+        rotated_token = issue_device_auth(device, now)
+        db.add(AuditEvent(
+            event_type="DEVICE_AUTH_ROTATED",
+            device_id=device.id,
+            actor="system",
+            detail=f"generation={device.auth_generation}",
         ))
 
     db.commit()
@@ -273,11 +376,102 @@ def heartbeat(
         "device_id": device.id,
         "lost_mode": device.lost_mode,
         "next_heartbeat_seconds": 60 if device.lost_mode else HEARTBEAT_SECONDS,
+        "device_token": rotated_token,
+        "auth_expires_at": device.auth_expires_at.isoformat() if device.auth_expires_at else None,
     }
 
 
+@app.post("/api/v1/software-inventory")
+def sync_software_inventory(
+    payload: SoftwareInventorySync,
+    device: Device = Depends(device_from_auth),
+    db: Session = Depends(db_session),
+):
+    now = datetime.now(timezone.utc)
+    existing = db.scalars(
+        select(InstalledApplication).where(InstalledApplication.device_id == device.id)
+    ).all()
+    by_key = {item.app_key: item for item in existing}
+    seen: set[str] = set()
+    added = 0
+
+    for app_item in payload.applications:
+        key = software_app_key(
+            app_item.name,
+            app_item.version,
+            app_item.publisher,
+            app_item.source,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+
+        item = by_key.get(key)
+        if item is None:
+            item = InstalledApplication(
+                device_id=device.id,
+                app_key=key,
+                name=app_item.name.strip(),
+                version=(app_item.version or "").strip() or None,
+                publisher=(app_item.publisher or "").strip() or None,
+                source=(app_item.source or "").strip() or None,
+                is_present=True,
+                first_seen=now,
+                last_seen=now,
+            )
+            db.add(item)
+            added += 1
+        else:
+            item.is_present = True
+            item.last_seen = now
+
+    removed = 0
+    for item in existing:
+        if item.app_key not in seen and item.is_present:
+            item.is_present = False
+            item.last_seen = now
+            removed += 1
+
+    db.add(AuditEvent(
+        event_type="SOFTWARE_INVENTORY_SYNC",
+        device_id=device.id,
+        actor="agent",
+        detail=f"present={len(seen)};added={added};removed={removed}",
+    ))
+    db.commit()
+    return {"ok": True, "present": len(seen), "added": added, "removed": removed}
+
+
+@app.get("/api/v1/devices/{device_id}/software")
+def get_software_inventory(
+    device_id: str,
+    include_absent: bool = False,
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)),
+    db: Session = Depends(db_session),
+):
+    device = db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    query = select(InstalledApplication).where(InstalledApplication.device_id == device_id)
+    if not include_absent:
+        query = query.where(InstalledApplication.is_present.is_(True))
+
+    items = db.scalars(query.order_by(InstalledApplication.name, InstalledApplication.version)).all()
+    return [{
+        "id": item.id,
+        "name": item.name,
+        "version": item.version,
+        "publisher": item.publisher,
+        "source": item.source,
+        "is_present": item.is_present,
+        "first_seen": item.first_seen.isoformat(),
+        "last_seen": item.last_seen.isoformat(),
+    } for item in items]
+
+
 @app.get("/api/v1/devices")
-def list_devices(_: str = Depends(require_admin), db: Session = Depends(db_session)):
+def list_devices(_: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)), db: Session = Depends(db_session)):
     now = datetime.now(timezone.utc)
     devices = db.scalars(select(Device).order_by(Device.last_seen.desc())).all()
     output = []
@@ -294,6 +488,12 @@ def list_devices(_: str = Depends(require_admin), db: Session = Depends(db_sessi
             "lan_ip": d.lan_ip,
             "public_ip": d.public_ip,
             "wifi_ssid": d.wifi_ssid,
+            "geo_country_code": d.geo_country_code,
+            "geo_country_name": d.geo_country_name,
+            "geo_region_name": d.geo_region_name,
+            "geo_city_name": d.geo_city_name,
+            "geo_accuracy_km": d.geo_accuracy_km,
+            "geo_updated_at": d.geo_updated_at.isoformat() if d.geo_updated_at else None,
             "platform": d.platform,
             "os_version": d.os_version,
             "architecture": d.architecture,
@@ -306,6 +506,9 @@ def list_devices(_: str = Depends(require_admin), db: Session = Depends(db_sessi
             "tpm_status": d.tpm_status,
             "antivirus_status": d.antivirus_status,
             "lost_mode": d.lost_mode,
+            "auth_generation": d.auth_generation,
+            "auth_expires_at": d.auth_expires_at.isoformat() if d.auth_expires_at else None,
+            "auth_revoked_at": d.auth_revoked_at.isoformat() if d.auth_revoked_at else None,
             "last_seen": d.last_seen.isoformat(),
             "online": age <= OFFLINE_SECONDS,
         })
@@ -313,7 +516,7 @@ def list_devices(_: str = Depends(require_admin), db: Session = Depends(db_sessi
 
 
 @app.get("/api/v1/devices/{device_id}")
-def get_device(device_id: str, _: str = Depends(require_admin), db: Session = Depends(db_session)):
+def get_device(device_id: str, _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)), db: Session = Depends(db_session)):
     device = db.get(Device, device_id)
     if device is None:
         raise HTTPException(status_code=404, detail="device not found")
@@ -328,6 +531,12 @@ def get_device(device_id: str, _: str = Depends(require_admin), db: Session = De
         "lan_ip": device.lan_ip,
         "public_ip": device.public_ip,
         "wifi_ssid": device.wifi_ssid,
+        "geo_country_code": device.geo_country_code,
+        "geo_country_name": device.geo_country_name,
+        "geo_region_name": device.geo_region_name,
+        "geo_city_name": device.geo_city_name,
+        "geo_accuracy_km": device.geo_accuracy_km,
+        "geo_updated_at": device.geo_updated_at.isoformat() if device.geo_updated_at else None,
         "platform": device.platform,
         "os_version": device.os_version,
         "architecture": device.architecture,
@@ -340,6 +549,9 @@ def get_device(device_id: str, _: str = Depends(require_admin), db: Session = De
         "tpm_status": device.tpm_status,
         "antivirus_status": device.antivirus_status,
         "lost_mode": device.lost_mode,
+        "auth_generation": device.auth_generation,
+        "auth_expires_at": device.auth_expires_at.isoformat() if device.auth_expires_at else None,
+        "auth_revoked_at": device.auth_revoked_at.isoformat() if device.auth_revoked_at else None,
         "created_at": device.created_at.isoformat(),
         "last_seen": device.last_seen.isoformat(),
     }
@@ -348,7 +560,7 @@ def get_device(device_id: str, _: str = Depends(require_admin), db: Session = De
 @app.get("/api/v1/devices/{device_id}/history")
 def device_history(
     device_id: str,
-    _: str = Depends(require_admin),
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)),
     db: Session = Depends(db_session),
 ):
     device = db.get(Device, device_id)
@@ -369,6 +581,10 @@ def device_history(
         "lan_ip": item.lan_ip,
         "public_ip": item.public_ip,
         "wifi_ssid": item.wifi_ssid,
+        "geo_country_code": item.geo_country_code,
+        "geo_region_name": item.geo_region_name,
+        "geo_city_name": item.geo_city_name,
+        "geo_accuracy_km": item.geo_accuracy_km,
         "battery_percent": item.battery_percent,
         "created_at": item.created_at.isoformat(),
     } for item in observations]
@@ -378,7 +594,7 @@ def device_history(
 def update_device(
     device_id: str,
     payload: DeviceUpdate,
-    actor: str = Depends(require_admin),
+    identity: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT)),
     db: Session = Depends(db_session),
 ):
     device = db.get(Device, device_id)
@@ -387,7 +603,7 @@ def update_device(
     changes = payload.model_dump(exclude_unset=True)
     for field, value in changes.items():
         setattr(device, field, value)
-    db.add(AuditEvent(event_type="DEVICE_UPDATED", device_id=device.id, actor=actor, detail=str(changes)))
+    db.add(AuditEvent(event_type="DEVICE_UPDATED", device_id=device.id, actor=identity.username, detail=str(changes)))
     db.commit()
     return {"ok": True}
 
@@ -396,7 +612,7 @@ def update_device(
 def set_lost_mode(
     device_id: str,
     payload: LostModeUpdate,
-    actor: str = Depends(require_admin),
+    identity: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT)),
     db: Session = Depends(db_session),
 ):
     device = db.get(Device, device_id)
@@ -406,15 +622,40 @@ def set_lost_mode(
     db.add(AuditEvent(
         event_type="LOST_MODE_ENABLED" if payload.enabled else "LOST_MODE_DISABLED",
         device_id=device.id,
-        actor=actor,
+        actor=identity.username,
         detail=payload.reason,
     ))
     db.commit()
     return {"ok": True, "lost_mode": device.lost_mode}
 
 
+@app.post("/api/v1/devices/{device_id}/revoke-auth")
+def revoke_device_auth(
+    device_id: str,
+    payload: DeviceAuthRevoke,
+    identity: SessionIdentity = Depends(require_roles(ROLE_ADMIN)),
+    db: Session = Depends(db_session),
+):
+    device = db.get(Device, device_id)
+    if device is None:
+        raise HTTPException(status_code=404, detail="device not found")
+
+    now = datetime.now(timezone.utc)
+    device.auth_revoked_at = now
+    device.auth_expires_at = now
+    device.token_hash = sha256(secrets.token_urlsafe(64))
+    db.add(AuditEvent(
+        event_type="DEVICE_AUTH_REVOKED",
+        device_id=device.id,
+        actor=identity.username,
+        detail=payload.reason,
+    ))
+    db.commit()
+    return {"ok": True, "revoked": True}
+
+
 @app.get("/api/v1/audit")
-def audit(_: str = Depends(require_admin), db: Session = Depends(db_session)):
+def audit(_: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_AUDIT)), db: Session = Depends(db_session)):
     events = db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(200)).all()
     return [{
         "id": e.id,

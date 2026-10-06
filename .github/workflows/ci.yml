@@ -2,11 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches:
+      - main
+      - "feat/**"
+      - "chore/**"
+      - "docs/**"
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: ci-${{ github.workflow }}-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -42,9 +45,22 @@ jobs:
           validate_configuration()
           inspector = inspect(engine)
           cols = {c["name"] for c in inspector.get_columns("devices")}
-          required = {"wifi_ssid", "hardware_uuid", "bitlocker_status", "tpm_status", "antivirus_status"}
+          required = {
+              "wifi_ssid",
+              "hardware_uuid",
+              "bitlocker_status",
+              "tpm_status",
+              "antivirus_status",
+              "geo_country_code",
+              "geo_region_name",
+              "geo_city_name",
+              "geo_accuracy_km",
+          }
           assert required.issubset(cols), cols
-          assert "device_observations" in inspector.get_table_names()
+          tables = inspector.get_table_names()
+          assert "device_observations" in tables
+          assert "user_accounts" in tables
+          assert "installed_applications" in tables
           assert app.title == "YUDE Asset Guard"
           print("FastAPI + migrations OK")
           PY

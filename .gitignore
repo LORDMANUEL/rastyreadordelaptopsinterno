@@ -18,3 +18,5 @@ local.properties
 .idea/
 .DS_Store
 Thumbs.db
+
+geoip/*.mmdb

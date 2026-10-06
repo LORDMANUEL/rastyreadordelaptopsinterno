@@ -72,13 +72,21 @@
       <div id="detailGrid" class="detail-grid"></div>
       <div class="actions">
         <button id="lostButton" class="danger" onclick="toggleLostMode()">Activar modo pérdida</button>
+        <button id="revokeAuthButton" class="danger" onclick="revokeDeviceAuth()">Revocar identidad agente</button>
         <button onclick="loadHistory()">Historial</button>
+        <button onclick="loadSoftware()">Aplicaciones</button>
         <button onclick="loadDevices()">Actualizar</button>
       </div>
       <div id="historyBox" style="display:none;margin-top:16px;overflow:auto">
         <table>
-          <thead><tr><th>Fecha</th><th>Evento</th><th>Usuario</th><th>SSID</th><th>IP LAN</th><th>IP pública</th><th>Batería</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Evento</th><th>Usuario</th><th>SSID</th><th>IP LAN</th><th>IP pública</th><th>Zona aprox.</th><th>Batería</th></tr></thead>
           <tbody id="historyRows"></tbody>
+        </table>
+      </div>
+      <div id="softwareBox" style="display:none;margin-top:16px;overflow:auto">
+        <table>
+          <thead><tr><th>Aplicación</th><th>Versión</th><th>Fabricante</th><th>Fuente</th><th>Última detección</th></tr></thead>
+          <tbody id="softwareRows"></tbody>
         </table>
       </div>
       <div class="muted small" style="margin-top:12px">El modo pérdida aumenta la frecuencia de heartbeat. No activa cámara, micrófono, keylogger ni lectura de comunicaciones.</div>
@@ -89,6 +97,7 @@
 <script>
 let devices=[];
 let selected=null;
+let currentRole=null;
 
 function esc(v){return String(v??'-').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function field(label,value){return '<div class="field"><span class="muted small">'+esc(label)+'</span><b>'+esc(value??'-')+'</b></div>'}
@@ -130,18 +139,19 @@ function showLogin(){
   sessionControls.style.display='none';
 }
 
-function showApp(usernameValue){
+function showApp(usernameValue,roleValue){
+  currentRole=roleValue;
   loginBox.style.display='none';
   app.style.display='block';
   sessionControls.style.display='flex';
-  sessionUser.textContent=usernameValue;
+  sessionUser.textContent=usernameValue+' · '+roleValue;
 }
 
 async function initialize(){
   const me=await fetch('/api/v1/auth/me',{credentials:'same-origin'});
   if(!me.ok){showLogin();return}
   const identity=await me.json();
-  showApp(identity.username);
+  showApp(identity.username,identity.role);
   await loadDevices();
 }
 
@@ -183,9 +193,16 @@ function renderDetail(x){
   detailGrid.innerHTML=
     field('Responsable',x.assigned_to)+field('Sucursal',x.branch)+field('Usuario',x.username)+field('Hostname',x.hostname)+
     field('Serial',x.serial)+field('UUID',x.hardware_uuid)+field('Sistema operativo',x.os_version)+field('Arquitectura',x.architecture)+
-    field('IP LAN',x.lan_ip)+field('IP pública',x.public_ip)+field('Wi-Fi / SSID',x.wifi_ssid)+field('Batería',x.battery_percent==null?'-':x.battery_percent+'%')+
-    field('BitLocker',x.bitlocker_status)+field('TPM',x.tpm_status)+field('Antivirus',x.antivirus_status)+field('Agente',x.agent_version);
+    field('IP LAN',x.lan_ip)+field('IP pública',x.public_ip)+field('Wi-Fi / SSID',x.wifi_ssid)+
+    field('Ubicación red', [x.geo_city_name,x.geo_region_name,x.geo_country_name].filter(Boolean).join(', ')||'-')+
+    field('Precisión aprox.',x.geo_accuracy_km==null?'-':'± '+x.geo_accuracy_km+' km')+
+    field('Batería',x.battery_percent==null?'-':x.battery_percent+'%')+
+    field('BitLocker',x.bitlocker_status)+field('TPM',x.tpm_status)+field('Antivirus',x.antivirus_status)+field('Agente',x.agent_version)+
+    field('Generación identidad',x.auth_generation)+field('Expira identidad',x.auth_expires_at?new Date(x.auth_expires_at).toLocaleString():'-')+
+    field('Revocada',x.auth_revoked_at?new Date(x.auth_revoked_at).toLocaleString():'NO');
   lostButton.textContent=x.lost_mode?'Desactivar modo pérdida':'Activar modo pérdida';
+  lostButton.style.display=currentRole==='AUDITORIA'?'none':'inline-block';
+  revokeAuthButton.style.display=currentRole==='ADMINISTRADOR'?'inline-block':'none';
 }
 
 async function loadHistory(){
@@ -200,16 +217,47 @@ async function loadHistory(){
     '<td>'+esc(x.wifi_ssid||'-')+'</td>'+
     '<td>'+esc(x.lan_ip||'-')+'</td>'+
     '<td>'+esc(x.public_ip||'-')+'</td>'+
+    '<td>'+esc([x.geo_city_name,x.geo_region_name,x.geo_country_code].filter(Boolean).join(', ')||'-')+'</td>'+
     '<td>'+esc(x.battery_percent==null?'-':x.battery_percent+'%')+'</td>'+
   '</tr>').join('');
   historyBox.style.display='block';
+}
+
+async function loadSoftware(){
+  if(!selected)return;
+  const r=await api('/api/v1/devices/'+selected.id+'/software');
+  if(!r.ok){alert('No se pudo cargar el inventario de aplicaciones');return}
+  const data=await r.json();
+  softwareRows.innerHTML=data.map(x=>'<tr>'+
+    '<td>'+esc(x.name)+'</td>'+
+    '<td>'+esc(x.version||'-')+'</td>'+
+    '<td>'+esc(x.publisher||'-')+'</td>'+
+    '<td>'+esc(x.source||'-')+'</td>'+
+    '<td>'+new Date(x.last_seen).toLocaleString()+'</td>'+
+  '</tr>').join('');
+  softwareBox.style.display='block';
 }
 
 function closeDetail(){
   detail.classList.remove('open');
   historyBox.style.display='none';
   historyRows.innerHTML='';
+  softwareBox.style.display='none';
+  softwareRows.innerHTML='';
   selected=null;
+}
+
+async function revokeDeviceAuth(){
+  if(!selected||currentRole!=='ADMINISTRADOR')return;
+  const reason=prompt('Motivo para revocar la identidad técnica del agente:');
+  if(!reason||reason.trim().length<3)return;
+  const r=await api('/api/v1/devices/'+selected.id+'/revoke-auth',{
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({reason:reason.trim()})
+  });
+  if(!r.ok){alert('No se pudo revocar la identidad del agente');return}
+  await loadDevices();
 }
 
 async function toggleLostMode(){

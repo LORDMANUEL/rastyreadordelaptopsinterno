@@ -47,3 +47,7 @@ class DeviceUpdate(BaseModel):
 class LostModeUpdate(BaseModel):
     enabled: bool
     reason: str = Field(min_length=3, max_length=500)
+
+
+class DeviceAuthRevoke(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
