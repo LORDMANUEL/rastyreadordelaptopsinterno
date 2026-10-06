@@ -422,6 +422,18 @@ def heartbeat(
     public_ip_changed = previous["public_ip"] != device.public_ip
     if public_ip_changed or device.geo_updated_at is None:
         apply_network_location(device, lookup_network_location(device.public_ip), now)
+
+    if device.offline_since is not None:
+        offline_since = as_utc(device.offline_since)
+        duration_seconds = max(0, int((now - offline_since).total_seconds()))
+        db.add(AuditEvent(
+            event_type="DEVICE_ONLINE_RESTORED",
+            device_id=device.id,
+            actor="system",
+            detail=f"offline_seconds={duration_seconds}",
+        ))
+        device.offline_since = None
+
     device.last_seen = now
 
     network_changed = any((
