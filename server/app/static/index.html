@@ -89,6 +89,7 @@
 <script>
 let devices=[];
 let selected=null;
+let currentRole=null;
 
 function esc(v){return String(v??'-').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 function field(label,value){return '<div class="field"><span class="muted small">'+esc(label)+'</span><b>'+esc(value??'-')+'</b></div>'}
@@ -130,18 +131,19 @@ function showLogin(){
   sessionControls.style.display='none';
 }
 
-function showApp(usernameValue){
+function showApp(usernameValue,roleValue){
+  currentRole=roleValue;
   loginBox.style.display='none';
   app.style.display='block';
   sessionControls.style.display='flex';
-  sessionUser.textContent=usernameValue;
+  sessionUser.textContent=usernameValue+' · '+roleValue;
 }
 
 async function initialize(){
   const me=await fetch('/api/v1/auth/me',{credentials:'same-origin'});
   if(!me.ok){showLogin();return}
   const identity=await me.json();
-  showApp(identity.username);
+  showApp(identity.username,identity.role);
   await loadDevices();
 }
 
@@ -186,6 +188,7 @@ function renderDetail(x){
     field('IP LAN',x.lan_ip)+field('IP pública',x.public_ip)+field('Wi-Fi / SSID',x.wifi_ssid)+field('Batería',x.battery_percent==null?'-':x.battery_percent+'%')+
     field('BitLocker',x.bitlocker_status)+field('TPM',x.tpm_status)+field('Antivirus',x.antivirus_status)+field('Agente',x.agent_version);
   lostButton.textContent=x.lost_mode?'Desactivar modo pérdida':'Activar modo pérdida';
+  lostButton.style.display=currentRole==='AUDITORIA'?'none':'inline-block';
 }
 
 async function loadHistory(){
