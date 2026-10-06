@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
@@ -6,7 +7,11 @@ from sqlalchemy import select
 
 from .database import SessionLocal
 from .enrollment_models import EnrollmentCode
-from .main import sha256
+from .models import AuditEvent
+
+
+def sha256(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def create_code(args) -> None:
@@ -25,6 +30,12 @@ def create_code(args) -> None:
     )
     with SessionLocal() as db:
         db.add(code)
+        db.flush()
+        db.add(AuditEvent(
+            event_type="ENROLLMENT_CODE_CREATED",
+            actor=args.created_by,
+            detail=f"id={code.id};label={code.label or ''};branch={code.branch or ''};platform={code.platform or ''};max_uses={code.max_uses}",
+        ))
         db.commit()
         db.refresh(code)
     print("ID=" + code.id)
@@ -56,8 +67,14 @@ def revoke_code(code_id: str) -> None:
         code = db.get(EnrollmentCode, code_id)
         if code is None:
             raise SystemExit("Código no encontrado")
-        code.revoked_at = datetime.now(timezone.utc)
-        db.commit()
+        if code.revoked_at is None:
+            code.revoked_at = datetime.now(timezone.utc)
+            db.add(AuditEvent(
+                event_type="ENROLLMENT_CODE_REVOKED",
+                actor="server-cli",
+                detail=f"id={code.id}",
+            ))
+            db.commit()
 
 
 def main() -> None:
