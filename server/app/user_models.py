@@ -16,8 +16,8 @@ class UserAccount(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     username: Mapped[str] = mapped_column(String(120), unique=True, index=True)
-    credential_salt: Mapped[str] = mapped_column(String(64))
-    credential_digest: Mapped[str] = mapped_column(String(128))
+    auth_salt: Mapped[str] = mapped_column(String(64))
+    auth_digest: Mapped[str] = mapped_column(String(128))
     role: Mapped[str] = mapped_column(String(32), index=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
