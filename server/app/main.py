@@ -61,7 +61,8 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=APP_NAME, version="0.9.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.10.0", lifespan=lifespan)
+app.middleware("http")(guard_request)
 
 
 def db_session():
