@@ -54,7 +54,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title=APP_NAME, version="0.6.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.7.0", lifespan=lifespan)
 
 
 def db_session():
@@ -389,6 +389,12 @@ def list_devices(_: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUP
             "lan_ip": d.lan_ip,
             "public_ip": d.public_ip,
             "wifi_ssid": d.wifi_ssid,
+            "geo_country_code": d.geo_country_code,
+            "geo_country_name": d.geo_country_name,
+            "geo_region_name": d.geo_region_name,
+            "geo_city_name": d.geo_city_name,
+            "geo_accuracy_km": d.geo_accuracy_km,
+            "geo_updated_at": d.geo_updated_at.isoformat() if d.geo_updated_at else None,
             "platform": d.platform,
             "os_version": d.os_version,
             "architecture": d.architecture,
@@ -426,6 +432,12 @@ def get_device(device_id: str, _: SessionIdentity = Depends(require_roles(ROLE_A
         "lan_ip": device.lan_ip,
         "public_ip": device.public_ip,
         "wifi_ssid": device.wifi_ssid,
+        "geo_country_code": device.geo_country_code,
+        "geo_country_name": device.geo_country_name,
+        "geo_region_name": device.geo_region_name,
+        "geo_city_name": device.geo_city_name,
+        "geo_accuracy_km": device.geo_accuracy_km,
+        "geo_updated_at": device.geo_updated_at.isoformat() if device.geo_updated_at else None,
         "platform": device.platform,
         "os_version": device.os_version,
         "architecture": device.architecture,
@@ -470,6 +482,10 @@ def device_history(
         "lan_ip": item.lan_ip,
         "public_ip": item.public_ip,
         "wifi_ssid": item.wifi_ssid,
+        "geo_country_code": item.geo_country_code,
+        "geo_region_name": item.geo_region_name,
+        "geo_city_name": item.geo_city_name,
+        "geo_accuracy_km": item.geo_accuracy_km,
         "battery_percent": item.battery_percent,
         "created_at": item.created_at.isoformat(),
     } for item in observations]
