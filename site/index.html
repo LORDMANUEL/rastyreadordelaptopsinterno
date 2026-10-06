@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="YUDE Asset Guard - inventario, telemetría y administración de activos corporativos.">
+  <title>YUDE Asset Guard</title>
+  <style>
+    :root{font-family:Inter,system-ui,sans-serif;color:#eef3ff;background:#0a1020}
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(circle at top,#17264b,#0a1020 55%);min-height:100vh}
+    main{max-width:1120px;margin:auto;padding:56px 24px}
+    .hero{padding:48px 0 28px}
+    h1{font-size:clamp(40px,7vw,72px);line-height:1;margin:0 0 18px}
+    h2{margin-top:0}
+    p{color:#aab6d4;line-height:1.65}
+    .badge{display:inline-block;border:1px solid #395082;border-radius:999px;padding:7px 12px;color:#9fc1ff}
+    .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin:28px 0}
+    .card{background:#111a30;border:1px solid #293a61;border-radius:16px;padding:20px}
+    .ok{color:#75e6a4}.warn{color:#f4c76a}
+    a{color:#9fc1ff;text-decoration:none}a:hover{text-decoration:underline}
+    .actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}
+    .button{border:1px solid #49669e;border-radius:10px;padding:11px 16px;background:#13213f}
+    code{background:#111a30;border-radius:6px;padding:2px 6px}
+    footer{margin-top:50px;padding-top:20px;border-top:1px solid #26314f;color:#7f8cab}
+    @media(max-width:800px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main>
+  <section class="hero">
+    <span class="badge">YUDE Asset Guard</span>
+    <h1>Administración de activos corporativos.</h1>
+    <p>Plataforma interna para inventario, telemetría, auditoría, enrolamiento y seguimiento operativo de equipos Windows y Android.</p>
+    <div class="actions">
+      <a class="button" href="https://github.com/LORDMANUEL/rastyreadordelaptopsinterno">Repositorio</a>
+      <a class="button" href="https://github.com/LORDMANUEL/rastyreadordelaptopsinterno/tree/main/docs">Documentación</a>
+      <a class="button" href="https://github.com/LORDMANUEL/rastyreadordelaptopsinterno/actions">CI / Builds</a>
+    </div>
+  </section>
+
+  <section class="grid">
+    <article class="card">
+      <h2>Backend</h2>
+      <p class="ok">FastAPI + PostgreSQL + Alembic</p>
+      <p>RBAC, auditoría, identidad por dispositivo, enrolamientos temporales, historial de red y geolocalización aproximada por IP.</p>
+    </article>
+    <article class="card">
+      <h2>Windows</h2>
+      <p class="ok">Agente Go x64</p>
+      <p>Servicio SCM, inventario de hardware, Wi-Fi, batería, BitLocker, TPM, antivirus, software instalado y heartbeat autenticado.</p>
+    </article>
+    <article class="card">
+      <h2>Android</h2>
+      <p class="warn">Base MDM en validación productiva</p>
+      <p>Enrolamiento HTTPS, heartbeat, Device Owner base y trabajo periódico. El provisioning empresarial y firma release siguen en cierre.</p>
+    </article>
+  </section>
+
+  <section class="card">
+    <h2>Estado del proyecto</h2>
+    <p><strong>MVP técnico:</strong> funcional y validado por CI. <strong>Producción:</strong> en fase de hardening, firma de artefactos, Android Enterprise, backups/observabilidad y piloto físico.</p>
+    <p>El estado técnico detallado vive en <code>docs/PROJECT_COMPLETION.md</code>.</p>
+  </section>
+
+  <footer>
+    YUDE Asset Guard · Proyecto de administración de activos corporativos.
+  </footer>
+</main>
+</body>
+</html>
