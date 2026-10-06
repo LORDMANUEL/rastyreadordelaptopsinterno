@@ -4,7 +4,7 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from app.database import SessionLocal
-from app.main import app
+from app.main import OFFLINE_SECONDS, app, scan_offline_devices
 from app.models import Device
 
 
@@ -170,3 +170,69 @@ def test_device_auth_rotation_and_revocation():
             json={"username": "revoked"},
         )
         assert revoked.status_code == 401
+
+
+def test_offline_detection_and_recovery():
+    serial = "OFFLINE-" + uuid4().hex[:10]
+    hardware_uuid = str(uuid4())
+
+    with TestClient(app) as client:
+        enrolled = client.post(
+            "/api/v1/enroll",
+            json={
+                "enrollment_token": "ci-enrollment-token",
+                "hostname": "YUDE-OFFLINE-01",
+                "serial": serial,
+                "platform": "windows",
+                "hardware_uuid": hardware_uuid,
+            },
+        )
+        assert enrolled.status_code == 200, enrolled.text
+        data = enrolled.json()
+
+        reference = datetime.now(timezone.utc)
+        with SessionLocal() as db:
+            device = db.get(Device, data["device_id"])
+            device.last_seen = reference - timedelta(seconds=OFFLINE_SECONDS + 30)
+            device.offline_since = None
+            db.commit()
+
+            marked = scan_offline_devices(db, now=reference)
+            assert marked == 1
+
+            db.refresh(device)
+            assert device.offline_since is not None
+
+            marked_again = scan_offline_devices(db, now=reference + timedelta(seconds=5))
+            assert marked_again == 0
+
+        summary = client.get(
+            "/api/v1/operations/summary",
+            headers={"X-Admin-Token": "ci-admin-token"},
+        )
+        assert summary.status_code == 200, summary.text
+        assert summary.json()["offline"] >= 1
+
+        heartbeat = client.post(
+            "/api/v1/heartbeat",
+            headers={"Authorization": "Bearer " + data["device_token"]},
+            json={"username": "YUDE\\offline-test"},
+        )
+        assert heartbeat.status_code == 200, heartbeat.text
+
+        with SessionLocal() as db:
+            device = db.get(Device, data["device_id"])
+            assert device.offline_since is None
+
+        audit = client.get(
+            "/api/v1/audit",
+            headers={"X-Admin-Token": "ci-admin-token"},
+        )
+        assert audit.status_code == 200
+        events = [
+            item["event_type"]
+            for item in audit.json()
+            if item["device_id"] == data["device_id"]
+        ]
+        assert "DEVICE_OFFLINE" in events
+        assert "DEVICE_ONLINE_RESTORED" in events
