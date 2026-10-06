@@ -74,12 +74,19 @@
         <button id="lostButton" class="danger" onclick="toggleLostMode()">Activar modo pérdida</button>
         <button id="revokeAuthButton" class="danger" onclick="revokeDeviceAuth()">Revocar identidad agente</button>
         <button onclick="loadHistory()">Historial</button>
+        <button onclick="loadSoftware()">Aplicaciones</button>
         <button onclick="loadDevices()">Actualizar</button>
       </div>
       <div id="historyBox" style="display:none;margin-top:16px;overflow:auto">
         <table>
           <thead><tr><th>Fecha</th><th>Evento</th><th>Usuario</th><th>SSID</th><th>IP LAN</th><th>IP pública</th><th>Zona aprox.</th><th>Batería</th></tr></thead>
           <tbody id="historyRows"></tbody>
+        </table>
+      </div>
+      <div id="softwareBox" style="display:none;margin-top:16px;overflow:auto">
+        <table>
+          <thead><tr><th>Aplicación</th><th>Versión</th><th>Fabricante</th><th>Fuente</th><th>Última detección</th></tr></thead>
+          <tbody id="softwareRows"></tbody>
         </table>
       </div>
       <div class="muted small" style="margin-top:12px">El modo pérdida aumenta la frecuencia de heartbeat. No activa cámara, micrófono, keylogger ni lectura de comunicaciones.</div>
@@ -216,10 +223,27 @@ async function loadHistory(){
   historyBox.style.display='block';
 }
 
+async function loadSoftware(){
+  if(!selected)return;
+  const r=await api('/api/v1/devices/'+selected.id+'/software');
+  if(!r.ok){alert('No se pudo cargar el inventario de aplicaciones');return}
+  const data=await r.json();
+  softwareRows.innerHTML=data.map(x=>'<tr>'+
+    '<td>'+esc(x.name)+'</td>'+
+    '<td>'+esc(x.version||'-')+'</td>'+
+    '<td>'+esc(x.publisher||'-')+'</td>'+
+    '<td>'+esc(x.source||'-')+'</td>'+
+    '<td>'+new Date(x.last_seen).toLocaleString()+'</td>'+
+  '</tr>').join('');
+  softwareBox.style.display='block';
+}
+
 function closeDetail(){
   detail.classList.remove('open');
   historyBox.style.display='none';
   historyRows.innerHTML='';
+  softwareBox.style.display='none';
+  softwareRows.innerHTML='';
   selected=null;
 }
 
