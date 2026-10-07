@@ -124,6 +124,10 @@ jobs:
           assert "software_catalog" in tables
           assert "device_software_assignments" in tables
           assert "device_software_tasks" in tables
+          catalog_cols = {c["name"] for c in inspector.get_columns("software_catalog")}
+          assert {"package_url", "package_sha256", "product_code"}.issubset(catalog_cols)
+          task_cols = {c["name"] for c in inspector.get_columns("device_software_tasks")}
+          assert "lease_expires_at" in task_cols
           assert app.title == "YUDE Asset Guard"
           print("FastAPI + migrations OK")
           PY
@@ -163,6 +167,9 @@ jobs:
             echo "$files"
             exit 1
           fi
+      - name: Run Go unit tests
+        working-directory: agent-go
+        run: go test ./...
       - name: Vet Linux build
         working-directory: agent-go
         run: go vet ./...

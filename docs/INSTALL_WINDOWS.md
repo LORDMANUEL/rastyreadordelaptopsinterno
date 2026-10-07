@@ -102,3 +102,12 @@ El agente reporta:
 El servidor conserva observaciones cuando cambia la red/IP/usuario y, durante Modo Pérdida, en cada heartbeat.
 
 No captura teclado, pantalla, cámara, micrófono, mensajes ni archivos personales.
+
+
+## Gestión de software
+
+El agente puede consumir tareas MSI aprobadas desde el catálogo corporativo.
+
+El procedimiento, validaciones de SHA-256, lease/reintentos y restricciones de seguridad están documentados en:
+
+`docs/WINDOWS_SOFTWARE_TASKS.md`

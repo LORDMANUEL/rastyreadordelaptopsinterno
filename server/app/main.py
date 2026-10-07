@@ -48,6 +48,8 @@ OFFLINE_SECONDS = int(os.getenv("HEARTBEAT_OFFLINE_SECONDS", "600"))
 DEVICE_AUTH_ROTATE_DAYS = int(os.getenv("DEVICE_AUTH_ROTATE_DAYS", "7"))
 DEVICE_AUTH_TTL_DAYS = int(os.getenv("DEVICE_AUTH_TTL_DAYS", "45"))
 OFFLINE_MONITOR_SECONDS = int(os.getenv("OFFLINE_MONITOR_SECONDS", "60"))
+SOFTWARE_TASK_LEASE_MINUTES = int(os.getenv("SOFTWARE_TASK_LEASE_MINUTES", "15"))
+SOFTWARE_TASK_MAX_ATTEMPTS = int(os.getenv("SOFTWARE_TASK_MAX_ATTEMPTS", "3"))
 STATIC_DIR = Path(__file__).parent / "static"
 LOGGER = logging.getLogger("yude_asset_guard")
 
@@ -108,7 +110,7 @@ async def lifespan(_: FastAPI):
             await task
 
 
-app = FastAPI(title=APP_NAME, version="0.13.0", lifespan=lifespan)
+app = FastAPI(title=APP_NAME, version="0.14.0", lifespan=lifespan)
 app.middleware("http")(guard_request)
 
 
@@ -594,6 +596,9 @@ def create_software_catalog_item(
         publisher=(payload.publisher or "").strip() or None,
         approved_version=(payload.approved_version or "").strip() or None,
         policy=payload.policy,
+        package_url=(payload.package_url or "").strip() or None,
+        package_sha256=(payload.package_sha256 or "").strip().lower() or None,
+        product_code=(payload.product_code or "").strip().upper() or None,
         created_by=identity.username,
         created_at=now,
         updated_at=now,
@@ -623,6 +628,9 @@ def list_software_catalog(
         "publisher": item.publisher,
         "approved_version": item.approved_version,
         "policy": item.policy,
+        "package_url": item.package_url,
+        "package_sha256": item.package_sha256,
+        "product_code": item.product_code,
         "created_by": item.created_by,
         "created_at": item.created_at.isoformat(),
         "updated_at": item.updated_at.isoformat(),
@@ -781,10 +789,21 @@ def create_software_task(
     identity: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT)),
     db: Session = Depends(db_session),
 ):
-    if db.get(Device, device_id) is None:
+    device = db.get(Device, device_id)
+    if device is None:
         raise HTTPException(status_code=404, detail="device not found")
-    if db.get(SoftwareCatalogItem, payload.catalog_id) is None:
+    if device.platform.lower() != "windows":
+        raise HTTPException(status_code=400, detail="software execution is currently supported only on Windows")
+
+    catalog = db.get(SoftwareCatalogItem, payload.catalog_id)
+    if catalog is None:
         raise HTTPException(status_code=404, detail="software catalog item not found")
+
+    if payload.action == "INSTALL":
+        if not catalog.package_url or not catalog.package_sha256:
+            raise HTTPException(status_code=400, detail="catalog item requires HTTPS package_url and SHA-256 for install")
+    elif payload.action == "UNINSTALL" and not catalog.product_code:
+        raise HTTPException(status_code=400, detail="catalog item requires MSI product_code for uninstall")
 
     task = DeviceSoftwareTask(
         device_id=device_id,
@@ -829,6 +848,7 @@ def list_device_software_tasks(
         "created_by": task.created_by,
         "created_at": task.created_at.isoformat(),
         "started_at": task.started_at.isoformat() if task.started_at else None,
+        "lease_expires_at": task.lease_expires_at.isoformat() if task.lease_expires_at else None,
         "completed_at": task.completed_at.isoformat() if task.completed_at else None,
         "result_detail": task.result_detail,
     } for task in tasks]
@@ -839,6 +859,40 @@ def list_pending_device_tasks(
     device: Device = Depends(device_from_auth),
     db: Session = Depends(db_session),
 ):
+    now = datetime.now(timezone.utc)
+
+    expired = db.scalars(
+        select(DeviceSoftwareTask).where(
+            DeviceSoftwareTask.device_id == device.id,
+            DeviceSoftwareTask.status == "RUNNING",
+            DeviceSoftwareTask.lease_expires_at.is_not(None),
+            DeviceSoftwareTask.lease_expires_at <= now,
+        )
+    ).all()
+    for task in expired:
+        if task.attempts >= SOFTWARE_TASK_MAX_ATTEMPTS:
+            task.status = "FAILED"
+            task.completed_at = now
+            task.result_detail = "execution lease expired after maximum attempts"
+            db.add(AuditEvent(
+                event_type="SOFTWARE_TASK_FAILED",
+                device_id=device.id,
+                actor="system",
+                detail=f"task_id={task.id};reason=lease_expired;attempts={task.attempts}",
+            ))
+        else:
+            task.status = "PENDING"
+            task.started_at = None
+            task.lease_expires_at = None
+            db.add(AuditEvent(
+                event_type="SOFTWARE_TASK_REQUEUED",
+                device_id=device.id,
+                actor="system",
+                detail=f"task_id={task.id};attempts={task.attempts}",
+            ))
+    if expired:
+        db.commit()
+
     tasks = db.scalars(
         select(DeviceSoftwareTask)
         .where(
@@ -861,8 +915,45 @@ def list_pending_device_tasks(
             "name": catalog.name,
             "publisher": catalog.publisher,
             "approved_version": catalog.approved_version,
+            "package_url": catalog.package_url,
+            "package_sha256": catalog.package_sha256,
+            "product_code": catalog.product_code,
         })
     return output
+
+
+@app.post("/api/v1/device-tasks/{task_id}/claim")
+def claim_device_software_task(
+    task_id: str,
+    device: Device = Depends(device_from_auth),
+    db: Session = Depends(db_session),
+):
+    task = db.get(DeviceSoftwareTask, task_id)
+    if task is None or task.device_id != device.id:
+        raise HTTPException(status_code=404, detail="task not found")
+    if task.status != "PENDING":
+        raise HTTPException(status_code=409, detail="task is not pending")
+    if task.attempts >= SOFTWARE_TASK_MAX_ATTEMPTS:
+        raise HTTPException(status_code=409, detail="task reached maximum attempts")
+
+    now = datetime.now(timezone.utc)
+    task.status = "RUNNING"
+    task.attempts += 1
+    task.started_at = now
+    task.lease_expires_at = now + timedelta(minutes=SOFTWARE_TASK_LEASE_MINUTES)
+    db.add(AuditEvent(
+        event_type="SOFTWARE_TASK_CLAIMED",
+        device_id=device.id,
+        actor="agent",
+        detail=f"task_id={task.id};attempt={task.attempts}",
+    ))
+    db.commit()
+    return {
+        "ok": True,
+        "status": task.status,
+        "attempts": task.attempts,
+        "lease_expires_at": task.lease_expires_at.isoformat(),
+    }
 
 
 @app.post("/api/v1/device-tasks/{task_id}/result")
@@ -877,17 +968,19 @@ def complete_device_software_task(
         raise HTTPException(status_code=404, detail="task not found")
     if task.status in {"SUCCEEDED", "FAILED"}:
         raise HTTPException(status_code=409, detail="task already completed")
+    if task.status != "RUNNING":
+        raise HTTPException(status_code=409, detail="task must be claimed before completion")
 
     now = datetime.now(timezone.utc)
     task.status = payload.status
     task.completed_at = now
+    task.lease_expires_at = None
     task.result_detail = payload.detail
-    task.attempts = max(1, task.attempts)
     db.add(AuditEvent(
         event_type="SOFTWARE_TASK_COMPLETED",
         device_id=device.id,
         actor="agent",
-        detail=f"task_id={task.id};status={task.status}",
+        detail=f"task_id={task.id};status={task.status};attempts={task.attempts}",
     ))
     db.commit()
     return {"ok": True, "status": task.status}

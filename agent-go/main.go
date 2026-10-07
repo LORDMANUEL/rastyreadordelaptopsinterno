@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-const agentVersion = "0.5.0"
+const agentVersion = "0.6.0"
 
 type Config struct {
 	ServerURL        string `json:"server_url"`
@@ -137,12 +137,17 @@ func agentLoop(ctx context.Context) error {
 		if err != nil {
 			logLine("heartbeat error: %v", err)
 			next = 60
-		} else if softwareSyncDue(cfg) {
-			if err := syncSoftwareInventory(cfg); err != nil {
-				logLine("software inventory sync error: %v", err)
-			} else {
-				cfg.SoftwareSyncAt = time.Now().UTC().Format(time.RFC3339)
-				dirtyConfig = true
+		} else {
+			if err := syncSoftwareTasks(cfg); err != nil {
+				logLine("software task sync error: %v", err)
+			}
+			if softwareSyncDue(cfg) {
+				if err := syncSoftwareInventory(cfg); err != nil {
+					logLine("software inventory sync error: %v", err)
+				} else {
+					cfg.SoftwareSyncAt = time.Now().UTC().Format(time.RFC3339)
+					dirtyConfig = true
+				}
 			}
 		}
 
@@ -323,6 +328,35 @@ func syncSoftwareInventory(cfg Config) error {
 		return errors.New("server did not acknowledge software inventory")
 	}
 	logLine("software inventory synced: present=%d added=%d removed=%d", out.Present, out.Added, out.Removed)
+	return nil
+}
+
+func getJSON(url, bearer string, out any) error {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	if bearer != "" {
+		req.Header.Set("Authorization", "Bearer "+bearer)
+	}
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("server returned %s: %s", resp.Status, strings.TrimSpace(string(raw)))
+	}
+	if len(raw) == 0 {
+		return nil
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		return fmt.Errorf("invalid server response: %w", err)
+	}
 	return nil
 }
 
