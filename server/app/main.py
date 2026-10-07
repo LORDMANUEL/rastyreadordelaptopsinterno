@@ -48,6 +48,8 @@ OFFLINE_SECONDS = int(os.getenv("HEARTBEAT_OFFLINE_SECONDS", "600"))
 DEVICE_AUTH_ROTATE_DAYS = int(os.getenv("DEVICE_AUTH_ROTATE_DAYS", "7"))
 DEVICE_AUTH_TTL_DAYS = int(os.getenv("DEVICE_AUTH_TTL_DAYS", "45"))
 OFFLINE_MONITOR_SECONDS = int(os.getenv("OFFLINE_MONITOR_SECONDS", "60"))
+SOFTWARE_TASK_LEASE_MINUTES = int(os.getenv("SOFTWARE_TASK_LEASE_MINUTES", "15"))
+SOFTWARE_TASK_MAX_ATTEMPTS = int(os.getenv("SOFTWARE_TASK_MAX_ATTEMPTS", "3"))
 STATIC_DIR = Path(__file__).parent / "static"
 LOGGER = logging.getLogger("yude_asset_guard")
 
@@ -787,10 +789,21 @@ def create_software_task(
     identity: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT)),
     db: Session = Depends(db_session),
 ):
-    if db.get(Device, device_id) is None:
+    device = db.get(Device, device_id)
+    if device is None:
         raise HTTPException(status_code=404, detail="device not found")
-    if db.get(SoftwareCatalogItem, payload.catalog_id) is None:
+    if device.platform.lower() != "windows":
+        raise HTTPException(status_code=400, detail="software execution is currently supported only on Windows")
+
+    catalog = db.get(SoftwareCatalogItem, payload.catalog_id)
+    if catalog is None:
         raise HTTPException(status_code=404, detail="software catalog item not found")
+
+    if payload.action == "INSTALL":
+        if not catalog.package_url or not catalog.package_sha256:
+            raise HTTPException(status_code=400, detail="catalog item requires HTTPS package_url and SHA-256 for install")
+    elif payload.action == "UNINSTALL" and not catalog.product_code:
+        raise HTTPException(status_code=400, detail="catalog item requires MSI product_code for uninstall")
 
     task = DeviceSoftwareTask(
         device_id=device_id,
@@ -835,6 +848,7 @@ def list_device_software_tasks(
         "created_by": task.created_by,
         "created_at": task.created_at.isoformat(),
         "started_at": task.started_at.isoformat() if task.started_at else None,
+        "lease_expires_at": task.lease_expires_at.isoformat() if task.lease_expires_at else None,
         "completed_at": task.completed_at.isoformat() if task.completed_at else None,
         "result_detail": task.result_detail,
     } for task in tasks]
