@@ -65,7 +65,7 @@ jobs:
           test -s /tmp/ready.json
           grep -q '"database":"ok"' /tmp/ready.json
 
-          docker compose exec -T backup /ops/backup-postgres.sh
+          docker compose exec -T backup sh /ops/backup-postgres.sh
           test "$(find backups-ci -maxdepth 1 -name '*.dump' | wc -l)" -ge 1
           test "$(find backups-ci -maxdepth 1 -name '*.dump.sha256' | wc -l)" -ge 1
 
