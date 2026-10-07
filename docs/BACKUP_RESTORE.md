@@ -11,11 +11,12 @@ Por defecto:
 - comprime el dump;
 - genera `SHA256`;
 - conserva 14 días;
-- guarda los archivos en el volumen `assetguard_backups`.
+- guarda los archivos en un directorio del host Debian (`./backups` por defecto).
 
 Los valores pueden cambiarse en el archivo `.env` del servidor:
 
 ```env
+BACKUP_HOST_DIR=./backups
 BACKUP_RETENTION_DAYS=14
 BACKUP_INTERVAL_SECONDS=86400
 ```
@@ -25,7 +26,7 @@ No se deben almacenar secretos reales en Git.
 ## Ejecutar un backup manual
 
 ```bash
-docker compose exec backup /ops/backup-postgres.sh
+docker compose exec backup sh /ops/backup-postgres.sh
 ```
 
 ## Listar backups
@@ -53,7 +54,7 @@ docker compose stop api
 Ejecute:
 
 ```bash
-docker compose run --rm backup /ops/restore-postgres.sh /backups/NOMBRE.dump
+docker compose run --rm backup sh /ops/restore-postgres.sh /backups/NOMBRE.dump
 ```
 
 Luego:
@@ -64,7 +65,7 @@ docker compose start api
 
 ## Copia fuera del servidor
 
-El volumen local protege frente a corrupción lógica y errores operativos, pero no frente a pérdida total del servidor.
+El directorio local facilita integrar los dumps con la política de backup del host, pero no protege frente a pérdida total del servidor.
 
 Para producción debe existir una segunda copia:
 

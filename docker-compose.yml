@@ -64,16 +64,15 @@ services:
         condition: service_healthy
     volumes:
       - ./ops:/ops:ro
-      - assetguard_backups:/backups
+      - ${BACKUP_HOST_DIR:-./backups}:/backups
     command:
       - sh
       - -c
       - |
         while true; do
-          /ops/backup-postgres.sh
-          sleep "${BACKUP_INTERVAL_SECONDS}"
+          sh /ops/backup-postgres.sh
+          sleep "$(printenv BACKUP_INTERVAL_SECONDS)"
         done
 
 volumes:
   assetguard_pgdata:
-  assetguard_backups:

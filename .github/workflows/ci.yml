@@ -34,6 +34,45 @@ jobs:
           docker build -t yude-asset-guard-ci ./server
           test "$(docker image inspect yude-asset-guard-ci --format '{{.Config.User}}')" = "assetguard"
           test -n "$(docker image inspect yude-asset-guard-ci --format '{{json .Config.Healthcheck}}')"
+      - name: Compose smoke test
+        env:
+          POSTGRES_DB: ci_assetguard
+          POSTGRES_USER: ci_assetguard
+          POSTGRES_PASSWORD: ci-db-value
+          DATABASE_URL: postgresql+psycopg://ci_assetguard:ci-db-value@db:5432/ci_assetguard
+          ADMIN_TOKEN: ci-admin-value
+          SESSION_SECRET: ci-session-value
+          API_BIND_ADDRESS: 127.0.0.1
+          API_PORT: 18000
+          BACKUP_HOST_DIR: ./backups-ci
+        run: |
+          rm -rf backups-ci
+          mkdir -p backups-ci
+          docker compose up -d --build db api backup
+          cleanup() {
+            docker compose down -v --remove-orphans
+            rm -rf backups-ci
+          }
+          trap cleanup EXIT
+
+          for i in $(seq 1 60); do
+            if curl --fail --silent http://127.0.0.1:18000/ready >/tmp/ready.json; then
+              break
+            fi
+            sleep 2
+          done
+
+          test -s /tmp/ready.json
+          grep -q '"database":"ok"' /tmp/ready.json
+
+          docker compose exec -T backup sh /ops/backup-postgres.sh
+          test "$(find backups-ci -maxdepth 1 -name '*.dump' | wc -l)" -ge 1
+          test "$(find backups-ci -maxdepth 1 -name '*.dump.sha256' | wc -l)" -ge 1
+
+          dump="$(find backups-ci -maxdepth 1 -name '*.dump' | head -n 1)"
+          test -n "$dump"
+          base="$(basename "$dump")"
+          (cd backups-ci && sha256sum -c "$base.sha256")
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"

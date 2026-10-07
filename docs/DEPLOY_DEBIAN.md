@@ -48,3 +48,40 @@ Docker Compose aplica:
 Si Traefik o Nginx están en contenedores, prefiera conectarlos a una red Docker compartida y no publicar el puerto del API hacia Internet.
 
 Solo cambie `API_BIND_ADDRESS=0.0.0.0` cuando exista una razón de red documentada y firewall/reverse proxy correctamente configurado.
+
+
+## Verificación de despliegue
+
+Después de levantar el stack:
+
+```bash
+docker compose ps
+curl --fail http://127.0.0.1:8000/health
+curl --fail http://127.0.0.1:8000/ready
+docker compose exec backup sh /ops/backup-postgres.sh
+ls -lh ./backups
+```
+
+Criterio de aceptación:
+
+- PostgreSQL en estado healthy;
+- API en estado healthy;
+- `/ready` devuelve `database=ok`;
+- el API no se ejecuta como root;
+- el puerto está ligado a localhost salvo decisión explícita;
+- se genera un `.dump` y su `.sha256`;
+- el backup del host se incluye en una segunda copia externa.
+
+## TLS / reverse proxy
+
+Este repositorio deja el API ligado a localhost para que el TLS termine en el reverse proxy del servidor.
+
+Producción requiere:
+
+1. DNS del dominio apuntando al servidor;
+2. certificado TLS válido;
+3. reverse proxy hacia `http://127.0.0.1:8000`;
+4. `FORWARDED_ALLOW_IPS` restringido al proxy;
+5. firewall permitiendo únicamente los puertos públicos necesarios.
+
+El certificado, dominio y reglas del proxy son datos del servidor real y no deben almacenarse en este repositorio.

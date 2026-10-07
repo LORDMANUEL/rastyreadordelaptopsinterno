@@ -14,6 +14,6 @@ file="$BACKUP_DIR/${POSTGRES_DB}_${stamp}.dump"
 
 pg_dump   --host "$POSTGRES_HOST"   --port "$POSTGRES_PORT"   --username "$POSTGRES_USER"   --format=custom   --compress=9   --file "$file"   "$POSTGRES_DB"
 
-sha256sum "$file" > "$file.sha256"
+(cd "$BACKUP_DIR" && sha256sum "$(basename "$file")" > "$(basename "$file").sha256")
 find "$BACKUP_DIR" -type f \( -name '*.dump' -o -name '*.dump.sha256' \) -mtime "+$BACKUP_RETENTION_DAYS" -delete
 printf 'backup=%s\n' "$file"
