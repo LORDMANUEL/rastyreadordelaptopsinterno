@@ -71,7 +71,7 @@ services:
       - |
         while true; do
           sh /ops/backup-postgres.sh
-          sleep "${BACKUP_INTERVAL_SECONDS}"
+          sleep "$BACKUP_INTERVAL_SECONDS"
         done
 
 volumes:
