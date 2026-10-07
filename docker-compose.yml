@@ -70,7 +70,7 @@ services:
       - -c
       - |
         while true; do
-          /ops/backup-postgres.sh
+          sh /ops/backup-postgres.sh
           sleep "${BACKUP_INTERVAL_SECONDS}"
         done
 
