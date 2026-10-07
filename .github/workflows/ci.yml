@@ -144,6 +144,11 @@ jobs:
         with:
           go-version: "1.23.x"
           cache-dependency-path: agent-go/go.mod
+      - name: Validate PowerShell installer scripts
+        shell: pwsh
+        run: |
+          [scriptblock]::Create((Get-Content agent-go/install.ps1 -Raw)) | Out-Null
+          [scriptblock]::Create((Get-Content agent-go/uninstall.ps1 -Raw)) | Out-Null
       - name: Resolve Go modules for all platforms
         working-directory: agent-go
         run: |
