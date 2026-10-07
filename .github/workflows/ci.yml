@@ -29,6 +29,11 @@ jobs:
           sh -n ops/backup-postgres.sh
           sh -n ops/restore-postgres.sh
           docker compose config >/dev/null
+      - name: Build and inspect hardened API image
+        run: |
+          docker build -t yude-asset-guard-ci ./server
+          test "$(docker image inspect yude-asset-guard-ci --format '{{.Config.User}}')" = "assetguard"
+          test -n "$(docker image inspect yude-asset-guard-ci --format '{{json .Config.Healthcheck}}')"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
