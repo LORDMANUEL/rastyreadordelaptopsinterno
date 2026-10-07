@@ -58,7 +58,7 @@ Después de levantar el stack:
 docker compose ps
 curl --fail http://127.0.0.1:8000/health
 curl --fail http://127.0.0.1:8000/ready
-docker compose exec backup /ops/backup-postgres.sh
+docker compose exec backup sh /ops/backup-postgres.sh
 ls -lh ./backups
 ```
 
