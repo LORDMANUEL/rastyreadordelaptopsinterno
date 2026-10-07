@@ -391,7 +391,9 @@ func firstLANIP() string {
 }
 
 func logLine(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "%s "+format+"\n", append([]any{time.Now().Format(time.RFC3339)}, args...)...)
+	line := fmt.Sprintf("%s "+format, append([]any{time.Now().Format(time.RFC3339)}, args...)...)
+	fmt.Fprintln(os.Stderr, line)
+	writePersistentLog(line)
 }
 
 func fatal(err error) {
