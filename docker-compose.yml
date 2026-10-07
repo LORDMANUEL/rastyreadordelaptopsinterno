@@ -64,7 +64,7 @@ services:
         condition: service_healthy
     volumes:
       - ./ops:/ops:ro
-      - assetguard_backups:/backups
+      - ${BACKUP_HOST_DIR:-./backups}:/backups
     command:
       - sh
       - -c
@@ -76,4 +76,3 @@ services:
 
 volumes:
   assetguard_pgdata:
-  assetguard_backups:
