@@ -26,7 +26,7 @@ No se deben almacenar secretos reales en Git.
 ## Ejecutar un backup manual
 
 ```bash
-docker compose exec backup /ops/backup-postgres.sh
+docker compose exec backup sh /ops/backup-postgres.sh
 ```
 
 ## Listar backups
@@ -54,7 +54,7 @@ docker compose stop api
 Ejecute:
 
 ```bash
-docker compose run --rm backup /ops/restore-postgres.sh /backups/NOMBRE.dump
+docker compose run --rm backup sh /ops/restore-postgres.sh /backups/NOMBRE.dump
 ```
 
 Luego:
