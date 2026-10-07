@@ -360,7 +360,6 @@ func getJSON(url, bearer string, out any) error {
 	return nil
 }
 
-
 func postJSON(url, bearer string, payload any, out any) error {
 	body, err := json.Marshal(payload)
 	if err != nil {
