@@ -19,10 +19,10 @@ func TestSyncSoftwareTasksClaimsAndReportsResult(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/device-tasks/pending":
 			_ = json.NewEncoder(w).Encode([]SoftwareTask{{
-				ID: "task-1",
-				Action: "INSTALL",
-				Name: "Test MSI",
-				PackageURL: "https://downloads.example.invalid/test.msi",
+				ID:            "task-1",
+				Action:        "INSTALL",
+				Name:          "Test MSI",
+				PackageURL:    "https://downloads.example.invalid/test.msi",
 				PackageSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			}})
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/device-tasks/task-1/claim":
