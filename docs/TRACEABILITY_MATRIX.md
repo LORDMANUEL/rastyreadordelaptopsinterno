@@ -27,13 +27,13 @@ Leyenda:
 | FR-015 | PRD/UI | static panel | CI/import/manual browser | CUMPLE |
 | FR-016 | PRD | user_accounts/RBAC | test_rbac.py | CUMPLE |
 | FR-017 | PRD | audit_events | API tests | CUMPLE |
-| FR-018 | PRD | Android API/Worker | Android build | PARCIAL |
-| FR-019 | PRD | DeviceOwner base | Android build | PARCIAL |
-| FR-020 | PRD | QR/zero-touch | — | PENDIENTE |
+| FR-018 | PRD | Android API/Worker + SecureStore | Android debug/release CI | CUMPLE |
+| FR-019 | PRD | DeviceOwner + provisioning compliance | Android release CI | CUMPLE EN CÓDIGO / EXTERNO FÍSICO |
+| FR-020 | PRD | QR provisioning generator | CI payload test | CUMPLE EN CÓDIGO / EXTERNO FÍSICO |
 | FR-021 | PRD | Authenticode | certificado externo | EXTERNO |
-| FR-022 | PRD | Android release signing | — | PENDIENTE |
-| FR-023 | PRD | XLSX/PDF export | — | PENDIENTE |
-| FR-024 | PRD | Leasing fields | — | PENDIENTE |
+| FR-022 | PRD | secret-backed Android release workflow | release config CI | CUMPLE EN CÓDIGO / REQUIERE SECRETS |
+| FR-023 | PRD | export endpoints + UI | API tests | CUMPLE |
+| FR-024 | PRD | enterprise asset fields | migration/API tests | CUMPLE GENERICO / MAPEADO OFICIAL EXTERNO |
 | NFR-001 | TRD | HTTPS Windows enforcement | Go code/CI | CUMPLE |
 | NFR-002 | TRD | Docker USER assetguard | CI image inspect | CUMPLE |
 | NFR-003 | TRD | Compose DB private | compose smoke test | CUMPLE |
