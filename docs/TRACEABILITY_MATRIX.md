@@ -32,8 +32,8 @@ Leyenda:
 | FR-020 | PRD | QR provisioning generator + DPC payload | script/workflow | CUMPLE EN CÓDIGO / VALIDACIÓN FÍSICA PENDIENTE |
 | FR-021 | PRD | Authenticode | certificado externo | EXTERNO |
 | FR-022 | PRD | Gradle signing + android-release workflow | workflow config | CUMPLE EN PIPELINE / KEYSTORE CORPORATIVO EXTERNO |
-| FR-023 | PRD | XLSX/PDF export | — | PENDIENTE |
-| FR-024 | PRD | Leasing fields | — | PENDIENTE |
+| FR-023 | PRD | server/app/exports.py + endpoints | test_api.py + CI pendiente | IMPLEMENTADO EN CÓDIGO |
+| FR-024 | PRD | Device + migración 0013 | test_api.py + CI pendiente | IMPLEMENTADO EN CÓDIGO / FORMATO OFICIAL PENDIENTE |
 | NFR-001 | TRD | HTTPS Windows enforcement | Go code/CI | CUMPLE |
 | NFR-002 | TRD | Docker USER assetguard | CI image inspect | CUMPLE |
 | NFR-003 | TRD | Compose DB private | compose smoke test | CUMPLE |

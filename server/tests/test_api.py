@@ -236,3 +236,85 @@ def test_offline_detection_and_recovery():
         ]
         assert "DEVICE_OFFLINE" in events
         assert "DEVICE_ONLINE_RESTORED" in events
+
+
+def test_enterprise_asset_fields_and_exports():
+    serial = "ASSET-" + uuid4().hex[:10]
+    hardware_uuid = str(uuid4())
+    admin = {"X-Admin-Token": "ci-admin-token"}
+
+    with TestClient(app) as client:
+        enrolled = client.post(
+            "/api/v1/enroll",
+            json={
+                "enrollment_token": "ci-enrollment-token",
+                "hostname": "YUDE-ASSET-01",
+                "serial": serial,
+                "platform": "windows",
+                "hardware_uuid": hardware_uuid,
+                "manufacturer": "Dell",
+                "model": "Latitude Test",
+            },
+        )
+        assert enrolled.status_code == 200, enrolled.text
+        device_id = enrolled.json()["device_id"]
+
+        updated = client.patch(
+            f"/api/v1/devices/{device_id}",
+            headers=admin,
+            json={
+                "asset_tag": "YUDE-0001",
+                "branch": "SPS",
+                "department": "IT",
+                "assigned_to": "Usuario Prueba",
+                "asset_status": "ACTIVE",
+                "physical_condition": "GOOD",
+                "ownership_type": "LEASED",
+                "lease_contract": "LEASE-TEST-001",
+                "provider": "Proveedor Prueba",
+                "acquisition_date": "2026-01-15",
+                "assignment_date": "2026-02-01",
+                "acquisition_cost": "1250.50",
+                "notes": "Activo de prueba CI",
+                "last_audit_at": "2026-10-13T12:00:00Z",
+            },
+        )
+        assert updated.status_code == 200, updated.text
+
+        detail = client.get(f"/api/v1/devices/{device_id}", headers=admin)
+        assert detail.status_code == 200
+        body = detail.json()
+        assert body["department"] == "IT"
+        assert body["ownership_type"] == "LEASED"
+        assert body["lease_contract"] == "LEASE-TEST-001"
+        assert body["acquisition_cost"] == "1250.50"
+
+        assets_xlsx = client.get("/api/v1/exports/assets.xlsx", headers=admin)
+        assert assets_xlsx.status_code == 200
+        assert assets_xlsx.headers["content-type"].startswith(
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+        assert assets_xlsx.content[:2] == b"PK"
+
+        assets_pdf = client.get("/api/v1/exports/assets.pdf", headers=admin)
+        assert assets_pdf.status_code == 200
+        assert assets_pdf.headers["content-type"].startswith("application/pdf")
+        assert assets_pdf.content.startswith(b"%PDF")
+
+        audit_xlsx = client.get("/api/v1/exports/audit.xlsx", headers=admin)
+        assert audit_xlsx.status_code == 200
+        assert audit_xlsx.content[:2] == b"PK"
+
+        audit_pdf = client.get("/api/v1/exports/audit.pdf", headers=admin)
+        assert audit_pdf.status_code == 200
+        assert audit_pdf.content.startswith(b"%PDF")
+
+
+def test_excel_formula_injection_escaped():
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from app.exports import build_xlsx
+    document = build_xlsx(["Test"], [["=1+1"], ["+SUM(A1:A2)"], ["@foo"], ["-1+2"], ["safe"]], "Test")
+    workbook = load_workbook(BytesIO(document))
+    assert [workbook.active.cell(row=i, column=1).data_type for i in range(2, 7)] == ["s"] * 5
+    assert workbook.active.cell(row=2, column=1).value == "'=1+1"

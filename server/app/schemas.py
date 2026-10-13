@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
-
+from datetime import date, datetime
+from decimal import Decimal
 
 class EnrollRequest(BaseModel):
     enrollment_token: str
@@ -39,9 +39,29 @@ class HeartbeatRequest(BaseModel):
 
 
 class DeviceUpdate(BaseModel):
-    asset_tag: str | None = None
-    branch: str | None = None
-    assigned_to: str | None = None
+    asset_tag: str | None = Field(default=None, max_length=100)
+    branch: str | None = Field(default=None, max_length=100)
+    department: str | None = Field(default=None, max_length=120)
+    assigned_to: str | None = Field(default=None, max_length=255)
+    asset_status: str | None = Field(
+        default=None,
+        pattern=r"^(ACTIVE|IN_REPAIR|STORAGE|RETURNED|RETIRED)$",
+    )
+    physical_condition: str | None = Field(
+        default=None,
+        pattern=r"^(GOOD|FAIR|POOR|DAMAGED)$",
+    )
+    ownership_type: str | None = Field(
+        default=None,
+        pattern=r"^(OWNED|LEASED|OTHER)$",
+    )
+    lease_contract: str | None = Field(default=None, max_length=160)
+    provider: str | None = Field(default=None, max_length=180)
+    acquisition_date: date | None = None
+    assignment_date: date | None = None
+    acquisition_cost: Decimal | None = Field(default=None, ge=0, max_digits=14, decimal_places=2)
+    notes: str | None = Field(default=None, max_length=4000)
+    last_audit_at: datetime | None = None
 
 
 class LostModeUpdate(BaseModel):

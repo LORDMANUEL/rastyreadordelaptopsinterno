@@ -150,3 +150,7 @@ Pendiente de política empresarial final:
 - software task results.
 
 No eliminar automáticamente datos auditables hasta acordar retención.
+
+
+## Migración 0013 — campos empresariales
+Nueva ficha: departamento, estado, condición, propiedad, contrato de leasing, proveedor, fechas, costo, notas, última auditoría. Ver docs/ASSET_MANAGEMENT.md.
