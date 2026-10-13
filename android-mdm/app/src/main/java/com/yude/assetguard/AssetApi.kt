@@ -34,7 +34,7 @@ object AssetApi {
     fun heartbeat(context: Context): HeartbeatResult {
         val prefs = context.getSharedPreferences("asset_guard", Context.MODE_PRIVATE)
         val serverUrl = prefs.getString("server_url", null) ?: error("Servidor no configurado")
-        val deviceToken = prefs.getString("device_token", null) ?: error("Tablet no enrolada")
+        val deviceToken = SecureStore.getDeviceToken(context) ?: error("Tablet no enrolada")
         val androidId = Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID)
         val battery = context.getSystemService(Context.BATTERY_SERVICE) as BatteryManager
         val percent = battery.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
@@ -54,7 +54,7 @@ object AssetApi {
         val rotatedToken = response.optString("device_token", "")
         var rotated = false
         if (rotatedToken.isNotBlank() && rotatedToken != deviceToken) {
-            prefs.edit().putString("device_token", rotatedToken).apply()
+            SecureStore.putDeviceToken(context, rotatedToken)
             rotated = true
         }
         return HeartbeatResult(
