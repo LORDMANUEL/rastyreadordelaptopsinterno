@@ -217,8 +217,16 @@ jobs:
           test -d "$ANDROID_HOME"
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
+      - name: Validate Android provisioning utility
+        run: |
+          printf 'fake-apk-for-payload-test' > /tmp/fake.apk
+          python3 ops/generate-android-provisioning-qr.py             --apk /tmp/fake.apk             --apk-url https://example.invalid/yude.apk             --server-url https://assets.example.invalid             --enrollment-token ci-temporary-code             --json-output /tmp/provisioning.json >/tmp/provisioning.stdout
+          grep -q 'PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME' /tmp/provisioning.json
+          grep -q 'com.yude.assetguard/.YudeDeviceAdminReceiver' /tmp/provisioning.json
       - name: Build debug APK
         run: gradle -p android-mdm :app:assembleDebug --stacktrace
+      - name: Validate release build configuration
+        run: gradle -p android-mdm :app:assembleRelease --stacktrace
       - name: Create APK checksum
         run: sha256sum android-mdm/app/build/outputs/apk/debug/app-debug.apk > android-mdm/app/build/outputs/apk/debug/SHA256SUMS.txt
       - uses: actions/upload-artifact@v4
