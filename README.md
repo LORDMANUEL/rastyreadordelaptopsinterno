@@ -1,60 +1,59 @@
 # YUDE Asset Guard
 
-Plataforma interna para inventario, telemetría y recuperación de laptops/tablets corporativas.
+Plataforma interna para inventario, telemetría, recuperación, auditoría y administración controlada de software en activos corporativos Windows y Android.
 
-> Diseñada para activos propiedad o bajo custodia de la empresa. No implementa keylogging, captura silenciosa de cámara/micrófono, lectura de mensajes ni vigilancia personal.
+> Diseñada para equipos propiedad o bajo custodia de la empresa. No implementa keylogging, captura silenciosa de cámara/micrófono, lectura de mensajes, extracción de archivos privados ni shell remoto arbitrario.
 
 ## Arquitectura
 
-- **Servidor:** Python 3.12 + FastAPI + PostgreSQL
-- **Panel web:** HTML/JS inicial servido por FastAPI (React/TypeScript en siguiente iteración)
-- **Agente Windows:** Go, ejecutable único y preparado para servicio de Windows
-- **Android MDM:** Kotlin/Android Enterprise, pensado para tablets corporativas
-- **Despliegue:** Debian + Docker Compose
+- Backend: Python 3.12 + FastAPI + PostgreSQL + Alembic.
+- Panel web: HTML/CSS/JavaScript servido por FastAPI.
+- Windows: agente Go como servicio Windows.
+- Android: Kotlin + WorkManager + Device Owner base.
+- Deploy: Debian + Docker Compose + reverse proxy HTTPS.
+- CI: GitHub Actions.
 
-## Funciones del MVP
+## Funciones implementadas
 
-- Alta/enrolamiento de dispositivos.
+- RBAC: ADMINISTRADOR / SOPORTE / AUDITORIA.
+- Códigos temporales de enrolamiento.
+- Identidad individual por dispositivo con rotación/revocación.
 - Heartbeat autenticado.
-- Inventario básico de hardware/SO.
-- IP LAN/pública reportada por servidor.
-- Usuario conectado, hostname, serial/UUID cuando el SO lo permita.
-- Estado online/offline.
-- Asignación de sucursal, responsable y etiqueta de activo.
-- Modo pérdida administrado desde servidor.
-- Auditoría de eventos.
-- Panel web de consulta.
-- Sin almacenamiento de contraseñas del usuario final.
+- Inventario Windows: hardware, red, batería, BitLocker, TPM, antivirus.
+- IP pública/LAN, SSID y ubicación IP aproximada.
+- Estado online/offline e historial.
+- Modo Pérdida.
+- Inventario y políticas de software.
+- Catálogo MSI aprobado.
+- Tareas INSTALL/UNINSTALL sin shell remoto.
+- Backups PostgreSQL + SHA-256.
+- Health/readiness.
+- Contenedor backend non-root.
+- CI server/Windows/Android.
 
-## Privacidad y límites
+## Documentación formal
 
-El sistema está orientado a laptops/tablets corporativas con política interna de uso y aviso de monitoreo. La geolocalización, cuando se implemente, debe usar APIs oficiales del sistema operativo y permisos/políticas corporativas. La ubicación basada en IP es aproximada.
-
-## Estructura
-
-```text
-server/         API FastAPI + panel
-agent-go/       agente Windows
-android-mdm/    cliente Android Enterprise / Device Owner
-docs/           arquitectura, despliegue y políticas
-```
-
-## Desarrollo
-
-La configuración se realiza mediante variables de entorno. Copie `.env.example` a `.env` únicamente en el servidor y nunca suba secretos al repositorio.
+- PRD: docs/PRD.md
+- TRD: docs/TRD.md
+- UI/UX Design: docs/UI_UX_DESIGN.md
+- App Flow: docs/APP_FLOW.md
+- Backend Schema: docs/BACKEND_SCHEMA.md
+- Development Plan: docs/DEVELOPMENT_PLAN.md
+- Traceability Matrix: docs/TRACEABILITY_MATRIX.md
+- Technical Documentation: docs/TECHNICAL_DOCUMENTATION.md
+- Project Completion: docs/PROJECT_COMPLETION.md
+- Changelog: CHANGELOG.md
 
 ## Estado
 
-MVP técnico funcional con backend, agente Windows, Android, panel web, historial y CI.
+Core backend: cerrado en código y CI.
+Windows: cerrado en código; falta validación física y firma Authenticode.
+Android: funcional como base; falta cierre Android Enterprise productivo.
+Activos/Leasing/exportes: pendientes.
+Release/piloto: pendientes o externos.
 
-El proyecto aún no debe considerarse producción final. Los bloqueantes restantes y el criterio de aceptación están documentados en:
+No se declara producción empresarial final hasta completar los criterios de docs/PROJECT_COMPLETION.md.
 
-- `docs/PROJECT_COMPLETION.md`
-- `docs/DEPLOY_DEBIAN.md`
-- `docs/AUTHENTICATION.md`
-- `docs/ANDROID_MDM.md`
+## Desarrollo
 
-Estado estimado actual:
-
-- MVP técnico: ~70%.
-- Producción empresarial: ~45-50%.
+Copie .env.example a .env únicamente en el servidor. Nunca versione secretos, certificados, keystores, contraseñas ni tokens reales.
