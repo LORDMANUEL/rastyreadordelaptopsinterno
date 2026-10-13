@@ -55,11 +55,11 @@ Acceso de solo lectura a activos, historial y eventos de auditoría.
 | FR-015 | Panel web con RBAC | CUMPLE |
 | FR-016 | Usuarios ADMINISTRADOR/SOPORTE/AUDITORIA | CUMPLE |
 | FR-017 | Auditoría de acciones administrativas | CUMPLE |
-| FR-018 | Android enrolamiento/heartbeat | CUMPLE PARCIAL |
-| FR-019 | Android Enterprise Device Owner productivo | PARCIAL |
-| FR-020 | QR/zero-touch Android | PENDIENTE |
+| FR-018 | Android enrolamiento/heartbeat | CUMPLE EN CÓDIGO |
+| FR-019 | Android Enterprise Device Owner productivo | CUMPLE EN CÓDIGO / VALIDACIÓN FÍSICA PENDIENTE |
+| FR-020 | QR provisioning Android | CUMPLE EN CÓDIGO / VALIDACIÓN FÍSICA PENDIENTE |
 | FR-021 | Firma release Windows | EXTERNO |
-| FR-022 | Firma release Android | PENDIENTE |
+| FR-022 | Firma release Android | CUMPLE EN PIPELINE / KEYSTORE CORPORATIVO EXTERNO |
 | FR-023 | Exportes XLSX/PDF de activos/auditoría | PENDIENTE |
 | FR-024 | Ficha completa leasing | PENDIENTE |
 | FR-025 | Release pipeline firmado | PENDIENTE |
@@ -100,7 +100,7 @@ El producto se considera listo para producción empresarial únicamente después
 
 - prueba física Windows;
 - firma Authenticode;
-- Android Enterprise productivo;
+- validación física Android Enterprise (Device Owner/QR/reboot/Doze/update) y keystore corporativo real;
 - TLS/DNS real;
 - restore real en entorno productivo;
 - repositorio privado/protegido;

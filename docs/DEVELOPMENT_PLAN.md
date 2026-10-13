@@ -52,21 +52,25 @@ Pendiente externo:
 - Authenticode.
 
 ## Fase 3 — Android
-Estado: PARCIAL.
+Estado: CÓDIGO CERRADO / VALIDACIÓN FÍSICA PENDIENTE.
 
 Hecho:
 - proyecto Kotlin;
 - enrolamiento;
 - heartbeat;
 - Device Admin/Owner base;
-- WorkManager.
+- WorkManager;
+- token cifrado con Android Keystore;
+- Android 12+ provisioning flow;
+- generador reproducible de QR provisioning;
+- configuración de release signing mediante secretos;
+- workflow Android Release.
 
-Pendiente:
-- Android Keystore;
-- release signing;
-- QR/zero-touch;
-- push rápido;
-- hardware real.
+Pendiente externo/operativo:
+- keystore corporativo real;
+- prueba física QR/Device Owner;
+- reboot/Doze/offline-online/update;
+- push rápido para Modo Pérdida casi inmediato.
 
 ## Fase 4 — UX/operación empresarial
 Estado: PARCIAL.

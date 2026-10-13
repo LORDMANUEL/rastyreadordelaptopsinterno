@@ -46,12 +46,11 @@ Fecha de revisión: 2026-10-13
 - uninstall/reinstall;
 - Authenticode.
 
-### P0 — Android Enterprise
-- Android Keystore;
-- release signing;
-- QR/zero-touch;
-- push rápido;
-- validación física.
+### P0 externo/operativo — Android Enterprise
+- keystore corporativo real para firma;
+- validación física QR provisioning / Device Owner;
+- reboot, Doze, pérdida/retorno de Internet y actualización APK;
+- push rápido para Modo Pérdida casi inmediato.
 
 ### P1 — Activos/Leasing
 - departamento;
@@ -78,7 +77,7 @@ No declarar 100% producción hasta cerrar:
 1. repositorio privado/protegido;
 2. Windows físico aprobado;
 3. Authenticode;
-4. Android Enterprise productivo;
+4. Android Enterprise validado físicamente y firmado con keystore corporativo;
 5. TLS/DNS real;
 6. restore real;
 7. Leasing/exportes si forman parte del alcance final;

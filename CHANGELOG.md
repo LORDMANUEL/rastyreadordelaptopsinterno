@@ -5,14 +5,17 @@ Todos los cambios relevantes de YUDE Asset Guard se documentan aquí.
 ## [Unreleased]
 
 ### Pendiente
-- Android Enterprise productivo: QR/zero-touch, Keystore y release signing.
+- Android Enterprise productivo: validación física Device Owner/QR, keystore corporativo real y canal push rápido.
 - Ficha empresarial/Leasing y exportes.
-- Release pipeline firmado.
+- Release pipeline Windows firmado y cierre de release empresarial.
 - Piloto físico y aceptación.
 
 ## [0.13.0] - 2026-10-13
 
 ### Added
+- Android Keystore-backed secure token storage.
+- Android 12+ provisioning flow y generador QR reproducible.
+- Workflow Android Release con signing mediante secretos.
 - Catálogo de software con metadatos MSI.
 - Cola de tareas de software Windows.
 - Lease/reintentos para tareas.

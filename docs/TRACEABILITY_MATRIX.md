@@ -27,11 +27,11 @@ Leyenda:
 | FR-015 | PRD/UI | static panel | CI/import/manual browser | CUMPLE |
 | FR-016 | PRD | user_accounts/RBAC | test_rbac.py | CUMPLE |
 | FR-017 | PRD | audit_events | API tests | CUMPLE |
-| FR-018 | PRD | Android API/Worker | Android build | PARCIAL |
-| FR-019 | PRD | DeviceOwner base | Android build | PARCIAL |
-| FR-020 | PRD | QR/zero-touch | — | PENDIENTE |
+| FR-018 | PRD | Android API/Worker + SecureStore | Android build/CI | CUMPLE EN CÓDIGO |
+| FR-019 | PRD | DeviceOwner + provisioning activities | Android build/CI | CUMPLE EN CÓDIGO / VALIDACIÓN FÍSICA PENDIENTE |
+| FR-020 | PRD | QR provisioning generator + DPC payload | script/workflow | CUMPLE EN CÓDIGO / VALIDACIÓN FÍSICA PENDIENTE |
 | FR-021 | PRD | Authenticode | certificado externo | EXTERNO |
-| FR-022 | PRD | Android release signing | — | PENDIENTE |
+| FR-022 | PRD | Gradle signing + android-release workflow | workflow config | CUMPLE EN PIPELINE / KEYSTORE CORPORATIVO EXTERNO |
 | FR-023 | PRD | XLSX/PDF export | — | PENDIENTE |
 | FR-024 | PRD | Leasing fields | — | PENDIENTE |
 | NFR-001 | TRD | HTTPS Windows enforcement | Go code/CI | CUMPLE |
@@ -52,7 +52,7 @@ Leyenda:
 Documentación de producto/arquitectura: CUMPLE.
 Backend core: CUMPLE.
 Windows software path: CUMPLE EN CÓDIGO.
-Android Enterprise productivo: PARCIAL.
+Android Enterprise: CÓDIGO CERRADO; validación física y credenciales corporativas externas pendientes.
 Activos/Leasing/exportes: PENDIENTE.
 Release/piloto: EXTERNO/PENDIENTE.
 
