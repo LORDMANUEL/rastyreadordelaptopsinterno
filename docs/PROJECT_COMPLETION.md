@@ -46,22 +46,28 @@ Fecha de revisión: 2026-10-13
 - uninstall/reinstall;
 - Authenticode.
 
-### P0 — Android Enterprise
+### P0 externo — Android Enterprise
+Código cerrado:
 - Android Keystore;
-- release signing;
-- QR/zero-touch;
-- push rápido;
-- validación física.
+- release signing configurable;
+- QR provisioning;
+- Android 12+ provisioning/compliance.
 
-### P1 — Activos/Leasing
-- departamento;
-- condición;
+Pendiente externo:
+- keystore corporativo en Secrets;
+- prueba física QR/Device Owner;
+- push rápido si se requiere respuesta inmediata.
+
+### P1 externo — Leasing específico
+Código cerrado:
+- ficha empresarial;
 - propiedad/lease;
-- contrato;
-- proveedor;
-- fechas/costo;
+- contrato/proveedor/fechas/costo;
 - última auditoría;
-- exportes.
+- XLSX/PDF de activos y auditoría.
+
+Pendiente externo:
+- recibir formato oficial del arrendador y mapearlo sin afirmar cumplimiento antes de validarlo.
 
 ### P2 — Release/piloto
 - SemVer/tag/release;
