@@ -87,3 +87,6 @@ No declarar 100% producción hasta cerrar:
 ## Evidencia
 
 La matriz requisito -> implementación -> prueba -> estado está en docs/TRACEABILITY_MATRIX.md.
+
+## Integración en validación — Fase 2
+La ficha empresarial, migración 0013 y exportes XLSX/PDF se implementaron en código. CI, seguridad de exportes y plantilla oficial del arrendador deben verificarse antes del cierre.
