@@ -99,19 +99,21 @@ No existe flujo de shell remoto.
 ## 7. Flujo Android actual
 
 ```text
-Tablet corporativa
-  -> App instalada
-  -> Device Owner de laboratorio / enrolamiento
-  -> URL HTTPS + código temporal
-  -> identidad individual
+Tablet corporativa reseteada
+  -> escanea QR de provisioning
+  -> Android descarga APK release por HTTPS y valida checksum
+  -> app queda como Device Owner
+  -> recibe server_url + código temporal
+  -> enrola identidad individual
+  -> token se guarda cifrado con Android Keystore
   -> WorkManager heartbeat
   -> backend
 ```
 
 Pendiente de producción:
-- QR/zero-touch;
-- firma release;
-- almacenamiento con Android Keystore;
+- validar QR/Device Owner en tablets físicas;
+- usar keystore corporativo real para firma;
+- validar reboot/Doze/pérdida-retorno de Internet/update;
 - canal push para respuesta rápida.
 
 ## 8. Flujo backup/restore
