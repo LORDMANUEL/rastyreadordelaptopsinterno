@@ -60,8 +60,8 @@ Acceso de solo lectura a activos, historial y eventos de auditoría.
 | FR-020 | QR provisioning Android | CUMPLE EN CÓDIGO / VALIDACIÓN FÍSICA PENDIENTE |
 | FR-021 | Firma release Windows | EXTERNO |
 | FR-022 | Firma release Android | CUMPLE EN PIPELINE / KEYSTORE CORPORATIVO EXTERNO |
-| FR-023 | Exportes XLSX/PDF de activos/auditoría | PENDIENTE |
-| FR-024 | Ficha completa leasing | PENDIENTE |
+| FR-023 | Exportes XLSX/PDF de activos/auditoría | IMPLEMENTADO EN CÓDIGO / VALIDACIÓN PENDIENTE |
+| FR-024 | Ficha empresarial genérica de leasing | IMPLEMENTADO EN CÓDIGO / FORMATO OFICIAL PENDIENTE |
 | FR-025 | Release pipeline firmado | PENDIENTE |
 
 ## 5. Requisitos no funcionales
