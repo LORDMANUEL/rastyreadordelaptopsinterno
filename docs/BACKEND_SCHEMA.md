@@ -12,7 +12,11 @@ Campos principales:
 - os_version, architecture, agent_version;
 - token_hash;
 - auth_issued_at, auth_expires_at, auth_revoked_at, auth_generation;
-- asset_tag, branch, assigned_to;
+- asset_tag, branch, department, assigned_to;
+- asset_status, physical_condition, ownership_type;
+- lease_contract, provider;
+- acquisition_date, assignment_date, acquisition_cost;
+- notes, last_audit_at;
 - username, lan_ip, public_ip, wifi_ssid;
 - geo_country_code/name, region, city, accuracy, updated_at;
 - manufacturer, model, hardware_uuid;
@@ -140,7 +144,8 @@ Secuencia actual:
 - 0009 software policy catalog;
 - 0010 offline observability;
 - 0011 software task queue;
-- 0012 Windows software execution.
+- 0012 Windows software execution;
+- 0013 enterprise asset fields.
 
 ## Retención
 
