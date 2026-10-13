@@ -55,13 +55,13 @@ Acceso de solo lectura a activos, historial y eventos de auditoría.
 | FR-015 | Panel web con RBAC | CUMPLE |
 | FR-016 | Usuarios ADMINISTRADOR/SOPORTE/AUDITORIA | CUMPLE |
 | FR-017 | Auditoría de acciones administrativas | CUMPLE |
-| FR-018 | Android enrolamiento/heartbeat | CUMPLE PARCIAL |
-| FR-019 | Android Enterprise Device Owner productivo | PARCIAL |
-| FR-020 | QR/zero-touch Android | PENDIENTE |
+| FR-018 | Android enrolamiento/heartbeat | CUMPLE |
+| FR-019 | Android Enterprise Device Owner productivo | CUMPLE EN CÓDIGO / EXTERNO FÍSICO |
+| FR-020 | QR provisioning Android | CUMPLE EN CÓDIGO / EXTERNO FÍSICO |
 | FR-021 | Firma release Windows | EXTERNO |
-| FR-022 | Firma release Android | PENDIENTE |
-| FR-023 | Exportes XLSX/PDF de activos/auditoría | PENDIENTE |
-| FR-024 | Ficha completa leasing | PENDIENTE |
+| FR-022 | Firma release Android | CUMPLE EN CÓDIGO / REQUIERE SECRETS |
+| FR-023 | Exportes XLSX/PDF de activos/auditoría | CUMPLE |
+| FR-024 | Ficha empresarial y leasing-ready | CUMPLE; MAPEADO OFICIAL EXTERNO |
 | FR-025 | Release pipeline firmado | PENDIENTE |
 
 ## 5. Requisitos no funcionales
