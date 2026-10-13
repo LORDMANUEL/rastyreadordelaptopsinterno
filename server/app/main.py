@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,7 @@ from .rbac import (
 from .auth_schemas import LoginRequest
 from .database import SessionLocal, engine
 from .http_security import guard_request
+from .exports import ASSET_HEADERS, AUDIT_HEADERS, asset_rows, audit_rows, build_pdf, build_xlsx
 from .models import AuditEvent, Device, DeviceObservation
 from .enrollment_models import EnrollmentCode
 from .software_models import InstalledApplication
@@ -1032,7 +1033,18 @@ def list_devices(_: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUP
             "serial": d.serial,
             "asset_tag": d.asset_tag,
             "branch": d.branch,
+            "department": d.department,
             "assigned_to": d.assigned_to,
+            "asset_status": d.asset_status,
+            "physical_condition": d.physical_condition,
+            "ownership_type": d.ownership_type,
+            "lease_contract": d.lease_contract,
+            "provider": d.provider,
+            "acquisition_date": d.acquisition_date.isoformat() if d.acquisition_date else None,
+            "assignment_date": d.assignment_date.isoformat() if d.assignment_date else None,
+            "acquisition_cost": str(d.acquisition_cost) if d.acquisition_cost is not None else None,
+            "notes": d.notes,
+            "last_audit_at": d.last_audit_at.isoformat() if d.last_audit_at else None,
             "username": d.username,
             "lan_ip": d.lan_ip,
             "public_ip": d.public_ip,
@@ -1076,7 +1088,18 @@ def get_device(device_id: str, _: SessionIdentity = Depends(require_roles(ROLE_A
         "serial": device.serial,
         "asset_tag": device.asset_tag,
         "branch": device.branch,
+        "department": device.department,
         "assigned_to": device.assigned_to,
+        "asset_status": device.asset_status,
+        "physical_condition": device.physical_condition,
+        "ownership_type": device.ownership_type,
+        "lease_contract": device.lease_contract,
+        "provider": device.provider,
+        "acquisition_date": device.acquisition_date.isoformat() if device.acquisition_date else None,
+        "assignment_date": device.assignment_date.isoformat() if device.assignment_date else None,
+        "acquisition_cost": str(device.acquisition_cost) if device.acquisition_cost is not None else None,
+        "notes": device.notes,
+        "last_audit_at": device.last_audit_at.isoformat() if device.last_audit_at else None,
         "username": device.username,
         "lan_ip": device.lan_ip,
         "public_ip": device.public_ip,
@@ -1203,6 +1226,66 @@ def revoke_device_auth(
     ))
     db.commit()
     return {"ok": True, "revoked": True}
+
+
+@app.get("/api/v1/exports/assets.xlsx")
+def export_assets_xlsx(
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)),
+    db: Session = Depends(db_session),
+):
+    devices = db.scalars(select(Device).order_by(Device.asset_tag, Device.hostname).limit(2000)).all()
+    data = build_xlsx(ASSET_HEADERS, asset_rows(devices), "Activos")
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="yude-assets.xlsx"'},
+    )
+
+
+@app.get("/api/v1/exports/assets.pdf")
+def export_assets_pdf(
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_SUPPORT, ROLE_AUDIT)),
+    db: Session = Depends(db_session),
+):
+    devices = db.scalars(select(Device).order_by(Device.asset_tag, Device.hostname)).all()
+    rows = asset_rows(devices)
+    indices = [0, 1, 2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 17, 18]
+    headers = [ASSET_HEADERS[i] for i in indices]
+    compact_rows = [[row[i] for i in indices] for row in rows]
+    data = build_pdf("YUDE Asset Guard - Inventario de Activos", headers, compact_rows)
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="yude-assets.pdf"'},
+    )
+
+
+@app.get("/api/v1/exports/audit.xlsx")
+def export_audit_xlsx(
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_AUDIT)),
+    db: Session = Depends(db_session),
+):
+    events = db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(5000)).all()
+    data = build_xlsx(AUDIT_HEADERS, audit_rows(events), "Auditoria")
+    return Response(
+        content=data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="yude-audit.xlsx"'},
+    )
+
+
+@app.get("/api/v1/exports/audit.pdf")
+def export_audit_pdf(
+    _: SessionIdentity = Depends(require_roles(ROLE_ADMIN, ROLE_AUDIT)),
+    db: Session = Depends(db_session),
+):
+    events = db.scalars(select(AuditEvent).order_by(AuditEvent.created_at.desc()).limit(1000)).all()
+    data = build_pdf("YUDE Asset Guard - Auditoria", AUDIT_HEADERS, audit_rows(events))
+    return Response(
+        content=data,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="yude-audit.pdf"'},
+    )
 
 
 @app.get("/api/v1/audit")
