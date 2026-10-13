@@ -11,10 +11,6 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import java.util.concurrent.TimeUnit
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
@@ -125,11 +121,6 @@ class MainActivity : Activity() {
     }
 
     private fun scheduleHeartbeat() {
-        val work = PeriodicWorkRequestBuilder<HeartbeatWorker>(15, TimeUnit.MINUTES).build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "assetguard-heartbeat",
-            ExistingPeriodicWorkPolicy.UPDATE,
-            work
-        )
+        HeartbeatScheduler.schedule(this)
     }
 }
