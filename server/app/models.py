@@ -1,7 +1,8 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Date, DateTime, Integer, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .database import Base
@@ -29,7 +30,18 @@ class Device(Base):
 
     asset_tag: Mapped[str | None] = mapped_column(String(100), index=True, nullable=True)
     branch: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    department: Mapped[str | None] = mapped_column(String(120), nullable=True)
     assigned_to: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    asset_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    physical_condition: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    ownership_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    lease_contract: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    provider: Mapped[str | None] = mapped_column(String(180), nullable=True)
+    acquisition_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    assignment_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    acquisition_cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 2), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_audit_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     username: Mapped[str | None] = mapped_column(String(255), nullable=True)
     lan_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
