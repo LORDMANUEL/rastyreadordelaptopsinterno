@@ -11,10 +11,6 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.work.ExistingPeriodicWorkPolicy
-import androidx.work.PeriodicWorkRequestBuilder
-import androidx.work.WorkManager
-import java.util.concurrent.TimeUnit
 
 class MainActivity : Activity() {
     private lateinit var status: TextView
@@ -51,7 +47,7 @@ class MainActivity : Activity() {
                 appendLine("Android ID: " + androidId)
                 appendLine("Modelo: " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL)
                 appendLine("Android: " + android.os.Build.VERSION.RELEASE)
-                appendLine("Enrolado: " + if (prefs.getString("device_token", null) != null) "SÍ" else "NO")
+                appendLine("Enrolado: " + if (SecureStore.getDeviceToken(this@MainActivity) != null) "SÍ" else "NO")
             }
         }
 
@@ -80,7 +76,7 @@ class MainActivity : Activity() {
         root.addView(heartbeatButton)
         setContentView(root)
 
-        if (prefs.getString("device_token", null) != null) scheduleHeartbeat()
+        if (SecureStore.getDeviceToken(this) != null) scheduleHeartbeat()
     }
 
     private fun enroll(androidId: String) {
@@ -99,8 +95,8 @@ class MainActivity : Activity() {
                     .edit()
                     .putString("server_url", url)
                     .putString("device_id", result.deviceId)
-                    .putString("device_token", result.deviceToken)
                     .apply()
+                SecureStore.putDeviceToken(this, result.deviceToken)
                 runOnUiThread {
                     enrollmentToken.setText("")
                     status.append("\nEnrolamiento correcto: " + result.deviceId)
@@ -125,11 +121,6 @@ class MainActivity : Activity() {
     }
 
     private fun scheduleHeartbeat() {
-        val work = PeriodicWorkRequestBuilder<HeartbeatWorker>(15, TimeUnit.MINUTES).build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "assetguard-heartbeat",
-            ExistingPeriodicWorkPolicy.UPDATE,
-            work
-        )
+        HeartbeatScheduler.schedule(this)
     }
 }
