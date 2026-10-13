@@ -48,9 +48,9 @@ Plataforma interna para inventario, telemetría, recuperación, auditoría y adm
 
 Core backend: cerrado en código y CI.
 Windows: cerrado en código; falta validación física y firma Authenticode.
-Android: funcional como base; falta cierre Android Enterprise productivo.
+Android: código de provisioning/Keystore/release cerrado; falta validación física Device Owner/QR, keystore corporativo real y canal push rápido.
 Activos/Leasing/exportes: pendientes.
-Release/piloto: pendientes o externos.
+Release/piloto: pendientes o externos; el workflow Android release ya existe, pero la firma corporativa y la aceptación física siguen pendientes.
 
 No se declara producción empresarial final hasta completar los criterios de docs/PROJECT_COMPLETION.md.
 
