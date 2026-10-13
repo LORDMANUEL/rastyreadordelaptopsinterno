@@ -1,34 +1,35 @@
-# YUDE Asset Guard - Android MDM
+# YUDE Asset Guard — Android MDM
 
-Cliente para tablets corporativas basado en Android Enterprise / Device Owner.
+Cliente corporativo Android Enterprise / Device Owner.
 
-## Estado actual
+## Implementado
 
-El proyecto ya incluye:
-- APK Android mínima compilable.
-- DeviceAdminReceiver.
-- detección de estado Device Owner / Device Admin.
-- identificación básica del dispositivo.
-- permisos de Internet y conectividad.
+- enrolamiento HTTPS;
+- identidad individual;
+- almacenamiento AES-GCM con Android Keystore;
+- heartbeat + WorkManager;
+- Device Admin/Device Owner;
+- Android 12+ provisioning mode/compliance;
+- auto-enrollment desde QR extras;
+- generador de payload/QR;
+- release signing por GitHub Secrets.
 
-## Aprovisionamiento de prueba
+## CI
 
-En un dispositivo de laboratorio recién restablecido, sin cuentas configuradas, puede probarse Device Owner con ADB:
+CI normal:
+- debug APK;
+- release build sin secretos para validar configuración;
+- provisioning payload generator.
 
-```bash
-adb shell dpm set-device-owner com.yude.assetguard/.YudeDeviceAdminReceiver
-```
+Release firmado:
+- workflow Android Release;
+- solo corre cuando existen los cuatro Secrets de firma.
 
-Android impone restricciones deliberadas a Device Owner. No se intenta evadirlas.
+## Provisioning
 
-## Siguiente fase
+Consulte docs/ANDROID_MDM.md.
 
-- enrolamiento HTTPS contra FastAPI;
-- token individual por tablet;
-- heartbeat con batería/red;
-- políticas corporativas permitidas;
-- modo pérdida;
-- QR de provisioning;
-- build APK firmado mediante GitHub Actions.
+## Seguridad
 
-No se implementan funciones de vigilancia personal, captura silenciosa ni lectura de comunicaciones.
+No se versionan keystores ni credenciales.
+No se implementan funciones de vigilancia personal ni evasión de controles Android.
