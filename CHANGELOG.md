@@ -4,6 +4,11 @@ Todos los cambios relevantes de YUDE Asset Guard se documentan aquí.
 
 ## [Unreleased]
 
+### Added — integración en validación
+- Ficha empresarial y exportaciones XLSX/PDF.
+- Neutralización de fórmulas no confiables en Excel y límites de resultados.
+
+
 ### Pendiente
 - Android Enterprise productivo: validación física Device Owner/QR, keystore corporativo real y canal push rápido.
 - Ficha empresarial/Leasing y exportes.
