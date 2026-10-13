@@ -1,53 +1,95 @@
-# Arquitectura - YUDE Asset Guard
+# Arquitectura — YUDE Asset Guard
 
-## Objetivo
-
-Mantener inventario y telemetría de laptops/tablets corporativas, con trazabilidad suficiente para auditoría y recuperación de activos.
-
-## Flujo
+## Vista general
 
 ```text
-Windows Agent (Go)            Android Enterprise
-        |                           |
-        +-------- HTTPS/TLS --------+
+Windows Agent (Go)       Android Client (Kotlin)
+        |                         |
+        +--------- HTTPS ---------+
                     |
               Reverse Proxy
                     |
-                FastAPI
-              /         \
-       PostgreSQL       Web UI
+                  FastAPI
+                /        \
+        PostgreSQL       Web UI
+            |
+        Backup/Restore
 ```
+
+## Backend
+
+Responsabilidades:
+- autenticación/RBAC;
+- enrolamientos temporales;
+- identidad de dispositivos;
+- heartbeat;
+- observabilidad;
+- auditoría;
+- software inventory/policy/tasks;
+- GeoIP aproximado;
+- panel web.
+
+## Windows
+
+Servicio nativo:
+- LocalSystem;
+- inventario hardware/red/seguridad;
+- software inventory;
+- logs persistentes;
+- installer update-safe + rollback;
+- service recovery;
+- MSI install/uninstall desde catálogo aprobado.
+
+## Android
+
+Cliente corporativo:
+- enrolamiento HTTPS;
+- identidad por dispositivo;
+- heartbeat;
+- WorkManager;
+- Device Owner base.
+
+Pendiente productivo:
+- QR/zero-touch;
+- Android Keystore;
+- release signing;
+- push rápido.
 
 ## Identidad del dispositivo
 
-1. El instalador recibe un token de enrolamiento.
-2. El agente envía inventario inicial.
-3. El servidor genera un token aleatorio único por dispositivo.
-4. El servidor guarda únicamente SHA-256 del token.
-5. El agente conserva el token local y lo usa como Bearer token.
-6. Una fase posterior migrará a certificados de dispositivo/mTLS.
+1. código temporal;
+2. enrolamiento;
+3. servidor emite token aleatorio individual;
+4. servidor guarda hash;
+5. agente almacena identidad protegida;
+6. token rota y puede revocarse.
 
-## Modo pérdida
+## Software remoto
 
-En el MVP el Modo Pérdida:
-- incrementa la frecuencia del heartbeat;
-- destaca el activo en el panel;
-- mantiene trazabilidad de conectividad;
-- registra quién activó el modo y por qué.
+No existe shell remoto.
 
-No activa vigilancia personal.
+Flujo permitido:
+- catálogo aprobado;
+- HTTPS;
+- SHA-256;
+- MSI;
+- msiexec silencioso;
+- task lease/retry;
+- auditoría.
 
-## Límites
+## Seguridad
 
-No se implementarán keyloggers, captura silenciosa de cámara/micrófono, robo de credenciales, lectura de mensajería personal, extracción de archivos privados ni bypass de controles del sistema operativo.
+- backend non-root;
+- CSRF;
+- rate limiting;
+- request limits;
+- trusted proxy;
+- HTTPS para agentes;
+- PostgreSQL privado;
+- backup + checksum;
+- roles.
 
-## Próximas fases
+## Escalado
 
-- RBAC y SSO.
-- Certificados por dispositivo.
-- Servicio nativo de Windows.
-- Historial de redes/SSID.
-- BitLocker/TPM/antivirus/compliance.
-- Android Device Owner/Android Enterprise.
-- Exportes de auditoría.
-- CI/CD y paquetes MSI/APK.
+El monitor offline interno está diseñado para una instancia API.
+Con múltiples replicas debe moverse a un scheduler único.

@@ -1,36 +1,48 @@
-# Aprovisionamiento Android MDM
+# Android MDM — YUDE Asset Guard
 
-YUDE Asset Guard para Android está diseñado para tablets corporativas mediante Android Enterprise / Device Owner.
+## Estado actual
 
-## Prueba de laboratorio con ADB
+Implementado:
+- proyecto Kotlin compilable;
+- enrolamiento HTTPS;
+- identidad individual;
+- heartbeat;
+- WorkManager;
+- reporte de Android ID, fabricante, modelo, versión, arquitectura y batería;
+- DeviceAdminReceiver;
+- detección Device Owner / Device Admin;
+- recepción de Modo Pérdida desde backend.
 
-El dispositivo debe estar recién restablecido y sin cuentas configuradas.
+## Laboratorio
 
-1. Instalar el APK debug.
-2. Ejecutar:
+En equipo recién restablecido:
 
 ```bash
 adb shell dpm set-device-owner com.yude.assetguard/.YudeDeviceAdminReceiver
 ```
 
-3. Abrir YUDE Asset Guard.
-4. Ingresar la URL HTTPS del servidor.
-5. Ingresar un token temporal de enrolamiento.
-6. Pulsar **Enrolar tablet**.
+Luego:
+1. abrir app;
+2. configurar URL HTTPS;
+3. usar código temporal;
+4. enrolar;
+5. validar heartbeat.
 
-La app recibe y conserva un token individual del dispositivo.
+## Pendiente para producción
 
-## Heartbeat
+- almacenamiento de identidad mediante Android Keystore;
+- firma release;
+- APK/AAB productivo;
+- QR provisioning;
+- zero-touch si aplica;
+- canal push para respuesta rápida;
+- pruebas Doze/reboot/offline;
+- matriz física por versiones Android reales.
 
-La aplicación dispone de:
+## Límites
 
-- heartbeat manual para pruebas;
-- heartbeat periódico mediante WorkManager;
-- reporte de Android ID, fabricante, modelo, versión Android, arquitectura y batería;
-- recepción del estado de Modo Pérdida desde el backend.
-
-Android limita WorkManager a intervalos periódicos mínimos establecidos por el sistema. Para una futura respuesta de Modo Pérdida casi inmediata se implementará FCM o un canal corporativo equivalente, sin evasión de controles del sistema operativo.
-
-## Producción
-
-Para una flota real debe utilizarse provisioning Android Enterprise mediante QR/zero-touch o el mecanismo permitido por el fabricante y la política de la empresa.
+No se implementan:
+- vigilancia silenciosa;
+- bypass de permisos;
+- lectura de comunicaciones;
+- cámara/micrófono ocultos.

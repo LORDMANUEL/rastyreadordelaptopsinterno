@@ -1,76 +1,59 @@
-# Autenticación del panel web
+# Autenticación y autorización
 
-El panel web ya no requiere escribir `ADMIN_TOKEN` en el navegador.
+## Usuarios humanos
 
-## Variables requeridas
+Las cuentas viven en user_accounts.
 
-```env
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD_SALT=<hex>
-ADMIN_PASSWORD_HASH=<scrypt hex>
-SESSION_SECRET=<random>
-SESSION_TTL_SECONDS=28800
-```
+Roles:
+- ADMINISTRADOR;
+- SOPORTE;
+- AUDITORIA.
 
-Genere los valores directamente dentro del contenedor/entorno del servidor:
+Las credenciales se derivan con scrypt y se almacenan como salt + digest.
+
+Administración local:
 
 ```bash
-cd server
-python -m app.hash_password
+docker compose exec api python -m app.manage_accounts set admin ADMINISTRADOR
+docker compose exec api python -m app.manage_accounts set soporte SOPORTE
+docker compose exec api python -m app.manage_accounts set auditoria AUDITORIA
+docker compose exec api python -m app.manage_accounts list
 ```
-
-El comando solicita la contraseña sin imprimirla y devuelve únicamente:
-
-- `ADMIN_PASSWORD_SALT`
-- `ADMIN_PASSWORD_HASH`
-- `SESSION_SECRET`
-
-Copie esos valores al archivo `.env` del servidor.
 
 ## Sesiones
 
-Al iniciar sesión correctamente:
-
-- el servidor genera una sesión firmada con HMAC-SHA256;
-- la cookie es `HttpOnly`;
-- la cookie utiliza `Secure`;
-- `SameSite=Strict`;
-- no se almacena la contraseña en el navegador;
-- no se almacena `ADMIN_TOKEN` en `localStorage` ni `sessionStorage`.
-
-El TTL predeterminado es 8 horas.
+- HMAC firmado con SESSION_SECRET;
+- cookie HttpOnly;
+- Secure;
+- SameSite=Strict;
+- TTL configurable;
+- rol/cuenta activa revalidado en cada request.
 
 ## ADMIN_TOKEN
 
-`ADMIN_TOKEN` se conserva para automatizaciones, pruebas y futuras integraciones API.
+Se conserva para automatización/integración técnica y pruebas.
+No se usa como contraseña del panel.
 
-No debe utilizarse como contraseña del panel web ni exponerse en JavaScript.
+## Dispositivos
+
+Cada equipo tiene identidad técnica independiente:
+- token aleatorio;
+- hash almacenado en servidor;
+- expiración;
+- rotación automática;
+- revocación.
+
+## Enrolamiento
+
+El flujo normal usa códigos temporales:
+- expiración;
+- límite de usos;
+- sucursal opcional;
+- plataforma opcional;
+- revocación;
+- auditoría.
 
 ## HTTPS
 
-Como la cookie utiliza el atributo `Secure`, el acceso normal debe publicarse mediante HTTPS.
-
-En producción:
-
-```text
-Browser
-   |
- HTTPS
-   v
-Traefik / Nginx / Cloudflare
-   |
-   v
-FastAPI
-```
-
-## Rotación
-
-Para invalidar todas las sesiones web existentes, cambie `SESSION_SECRET` y reinicie el API.
-
-Para cambiar la contraseña administrativa, vuelva a ejecutar:
-
-```bash
-python -m app.hash_password
-```
-
-y reemplace los valores en `.env`.
+Producción requiere HTTPS delante de FastAPI.
+Windows rechaza server_url sin HTTPS.
