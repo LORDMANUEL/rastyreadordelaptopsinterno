@@ -13,6 +13,9 @@ Todos los cambios relevantes de YUDE Asset Guard se documentan aquí.
 ## [0.13.0] - 2026-10-13
 
 ### Added
+- Enterprise asset fields for department, condition, ownership/lease, contract, provider, dates, cost, notes and last audit.
+- XLSX/PDF exports for assets and audit.
+- Android Keystore-backed identity, Android 12+ provisioning and QR payload generation.
 - Catálogo de software con metadatos MSI.
 - Cola de tareas de software Windows.
 - Lease/reintentos para tareas.
